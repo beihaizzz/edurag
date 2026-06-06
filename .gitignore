@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# Environment
+.env
+.env.local
+
+# Temp
+tmp/
+temp/
+
+# Extracted text / temporary files
+*.txt
+*.rtf
+extract*.ps1
+extract*.py
+doc_full_text.txt
+ps_output.txt
+all_elements.txt
+final_output.txt
+
+# Office temporary files
+~$*.doc
+~$*.docx
