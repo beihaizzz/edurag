@@ -15,9 +15,9 @@ from app.core.security import (
     verify_password,
 )
 from app.deps import get_current_user
-from app.models.user import User
+from app.models import User
+from app.schemas.common import APIResponse
 from app.schemas.user import (
-    APIResponse,
     ChangePasswordRequest,
     LoginRequest,
     RegisterRequest,
@@ -47,6 +47,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     await db.flush()
+    await db.commit()
     await db.refresh(user)
 
     return APIResponse(
