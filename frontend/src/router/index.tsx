@@ -7,14 +7,13 @@ import ChangePasswordPage from '../pages/auth/ChangePasswordPage'
 
 // 学生页面
 import StudentHomePage from '../pages/student/StudentHomePage'
-import SearchResults from '../pages/student/SearchResults'
-import QAHistory from '../pages/student/QAHistory'
-import QADetail from '../pages/student/QADetail'
+import SearchPage from '../pages/student/SearchPage'
+import QAPage from '../pages/student/QAPage'
 
 // 教师页面
 import TeacherHomePage from '../pages/teacher/TeacherHomePage'
-import UploadDocument from '../pages/teacher/UploadDocument'
-import DocumentManage from '../pages/teacher/DocumentManage'
+import DocumentUploadPage from '../pages/teacher/DocumentUploadPage'
+import DocumentListPage from '../pages/teacher/DocumentListPage'
 
 // 管理员页面
 import AdminHomePage from '../pages/admin/AdminHomePage'
@@ -37,14 +36,19 @@ const router = createBrowserRouter([
       {
         element: <Layout />,
         children: [
+          // 通用检索与问答（所有认证用户）
+          { path: '/search', element: <SearchPage /> },
+          { path: '/qa', element: <QAPage /> },
+          { path: '/qa/:id', element: <QAPage /> },
+
           // 学生端
           {
             element: <AuthGuard role="student" />,
             children: [
               { path: '/student', element: <StudentHomePage /> },
-              { path: '/student/search', element: <SearchResults /> },
-              { path: '/student/qa', element: <QAHistory /> },
-              { path: '/student/qa/:id', element: <QADetail /> },
+              { path: '/student/search', element: <SearchPage /> },
+              { path: '/student/qa', element: <QAPage /> },
+              { path: '/student/qa/:id', element: <QAPage /> },
             ],
           },
 
@@ -53,8 +57,17 @@ const router = createBrowserRouter([
             element: <AuthGuard role="teacher" />,
             children: [
               { path: '/teacher', element: <TeacherHomePage /> },
-              { path: '/teacher/upload', element: <UploadDocument /> },
-              { path: '/teacher/documents', element: <DocumentManage /> },
+              { path: '/teacher/documents/upload', element: <DocumentUploadPage /> },
+              { path: '/teacher/documents', element: <DocumentListPage /> },
+            ],
+          },
+
+          // 管理端也能访问文档管理（带审核功能）
+          {
+            element: <AuthGuard role="admin" />,
+            children: [
+              { path: '/teacher/documents/upload', element: <DocumentUploadPage /> },
+              { path: '/teacher/documents', element: <DocumentListPage /> },
             ],
           },
 

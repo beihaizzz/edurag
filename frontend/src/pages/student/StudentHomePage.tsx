@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Typography, Card, Tag, List, Row, Col, Skeleton, Space } from 'antd'
 import {
@@ -7,31 +7,32 @@ import {
   RightOutlined,
 } from '@ant-design/icons'
 import SearchBar from '../../components/SearchBar'
+import api from '../../services/api'
+import type { APIResponse, PaginatedResponse } from '../../types/api'
 
 const { Title, Paragraph, Text } = Typography
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
-// TODO: Week 2 - fetch courses from /api/v1/courses
-const COURSES = [
-  { name: '大学物理', color: '#0891b2' },
-  { name: '高等数学', color: '#dc2626' },
-  { name: '程序设计', color: '#059669' },
-  { name: '操作系统', color: '#7c3aed' },
-  { name: '数据结构', color: '#d97706' },
-  { name: '深度学习', color: '#0d9488' },
-  { name: '软件工程', color: '#0284c7' },
-  { name: '数字图像处理', color: '#db2777' },
-  { name: 'Unity开发', color: '#4f46e5' },
-]
-
-// TODO: Week 2 - fetch popular questions from /api/v1/questions/hot
+// TODO: Week 2 - fetch popular questions from /api/v1/qa?sort=popular
 const POPULAR_QUESTIONS = [
   '操作系统实验报告怎么写？有哪些注意事项？',
   '高等数学期末重点是什么？怎么高效复习？',
   '数据结构中的二叉树遍历有哪些实际应用场景？',
   '大学物理电磁学部分有哪些常见考点和解题技巧？',
   '深度学习入门应该从哪些经典项目开始实践？',
+]
+
+interface CourseItem {
+  id: number
+  name: string
+}
+
+// ─── Pre-defined colors for course tags ────────────────────────────────────────
+const COURSE_COLORS = [
+  '#0891b2', '#dc2626', '#059669', '#7c3aed', '#d97706',
+  '#0d9488', '#0284c7', '#db2777', '#4f46e5', '#ca8a04',
+  '#2563eb', '#9333ea', '#e11d48', '#0891b2', '#65a30d',
 ]
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
@@ -167,12 +168,17 @@ const styles: Record<string, CSSProperties> = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getTagStyle(course: (typeof COURSES)[number]): CSSProperties {
+function getColor(index: number): string {
+  return COURSE_COLORS[index % COURSE_COLORS.length]
+}
+
+function getTagStyle(index: number): CSSProperties {
+  const color = getColor(index)
   return {
     ...styles.courseTag,
-    color: course.color,
-    background: `${course.color}14`, // ~8% opacity
-    border: `1px solid ${course.color}28`, // ~16% opacity
+    color,
+    background: `${color}14`,
+    border: `1px solid ${color}28`,
   }
 }
 
@@ -180,18 +186,19 @@ function getTagStyle(course: (typeof COURSES)[number]): CSSProperties {
 
 export default function StudentHomePage() {
   const navigate = useNavigate()
-  // TODO: Week 2 - add useState loading state when fetching from API
-  const [loading] = useState(false)
+  const [courses, setCourses] = useState<CourseItem[]>([])
+  const [loading, setLoading] = useState(true)
 
-  if (loading) {
-    return (
-      <div style={styles.page}>
-        <Card style={{ borderRadius: 12 }}>
-          <Skeleton active paragraph={{ rows: 6 }} />
-        </Card>
-      </div>
-    )
-  }
+  useEffect(() => {
+    api.get<APIResponse<PaginatedResponse<CourseItem>>>('/courses', { params: { page: 1, page_size: 100 } })
+      .then((r) => {
+        if (r.data.code === 0 && r.data.data) {
+          setCourses(r.data.data.items ?? [])
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
 
   const handleCourseClick = (courseName: string) => {
     navigate(`/student/search?course=${encodeURIComponent(courseName)}`)
@@ -240,23 +247,30 @@ export default function StudentHomePage() {
               style={styles.sectionCard}
             >
               <div style={styles.tagGrid}>
-                {COURSES.map((course) => (
-                  <Tag
-                    key={course.name}
-                    style={getTagStyle(course)}
-                    onClick={() => handleCourseClick(course.name)}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.04)'
-                      e.currentTarget.style.boxShadow = `0 2px 8px ${course.color}30`
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)'
-                      e.currentTarget.style.boxShadow = 'none'
-                    }}
-                  >
-                    {course.name}
-                  </Tag>
-                ))}
+                {loading ? (
+                  <Skeleton active paragraph={{ rows: 2 }} />
+                ) : (
+                  courses.map((course, idx) => {
+                    const color = getColor(idx)
+                    return (
+                      <Tag
+                        key={course.id}
+                        style={getTagStyle(idx)}
+                        onClick={() => handleCourseClick(course.name)}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'scale(1.04)'
+                          e.currentTarget.style.boxShadow = `0 2px 8px ${color}30`
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)'
+                          e.currentTarget.style.boxShadow = 'none'
+                        }}
+                      >
+                        {course.name}
+                      </Tag>
+                    )
+                  })
+                )}
               </div>
             </Card>
 

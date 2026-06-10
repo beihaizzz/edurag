@@ -1,4 +1,5 @@
-import { Typography, Card, Row, Col, Statistic, Button, Table, Tag, Space, Empty } from 'antd'
+import { useEffect, useState, useCallback } from 'react'
+import { Typography, Card, Row, Col, Statistic, Button, Table, Tag, Space, Empty, Spin } from 'antd'
 import {
   FileOutlined,
   ClockCircleOutlined,
@@ -7,6 +8,13 @@ import {
   FileTextOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
+import {
+  getDocumentStatistics,
+  listDocuments,
+  type DocumentInfo,
+  type DocumentStatistics,
+} from '../../services/documentsApi'
+import { refreshDashboard } from '../../services/refresh'
 
 const { Title } = Typography
 
@@ -23,55 +31,25 @@ const tokens = {
   cardBg: '#ffffff',
 }
 
-/* ── Stat Card Config ──────────────────────────────────────────── */
-interface StatCardConfig {
-  title: string
-  value: number
-  icon: React.ReactNode
-  accent: string
-  gradient: string
-}
-
-const statCards: StatCardConfig[] = [
-  {
-    title: '已上传文档数',
-    value: 0,
-    icon: <FileOutlined />,
-    accent: tokens.navyLight,
-    gradient: 'linear-gradient(135deg, #ebf4ff 0%, #dbeafe 100%)',
-  },
-  {
-    title: '待审核数',
-    value: 0,
-    icon: <ClockCircleOutlined />,
-    accent: tokens.amber,
-    gradient: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
-  },
-  {
-    title: '审核通过数',
-    value: 0,
-    icon: <CheckCircleOutlined />,
-    accent: tokens.emerald,
-    gradient: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
-  },
-]
-
 /* ── Table Columns ─────────────────────────────────────────────── */
 const columns = [
   {
     title: '文件名',
-    dataIndex: 'filename',
-    key: 'filename',
+    dataIndex: 'title',
+    key: 'title',
+    ellipsis: true,
   },
   {
-    title: '课程',
-    dataIndex: 'course',
-    key: 'course',
+    title: '类型',
+    dataIndex: 'file_type',
+    key: 'file_type',
+    width: 100,
   },
   {
     title: '状态',
     dataIndex: 'status',
     key: 'status',
+    width: 100,
     render: (status: string) => {
       const statusMap: Record<string, { color: string; text: string }> = {
         pending: { color: 'orange', text: '待审核' },
@@ -86,14 +64,48 @@ const columns = [
     title: '上传时间',
     dataIndex: 'created_at',
     key: 'created_at',
+    width: 180,
+    render: (val: string) => {
+      const d = new Date(val)
+      return isNaN(d.getTime()) ? val : d.toLocaleString('zh-CN')
+    },
   },
 ]
 
 export default function TeacherHomePage() {
   const navigate = useNavigate()
+  const [stats, setStats] = useState<DocumentStatistics | null>(null)
+  const [documents, setDocuments] = useState<DocumentInfo[]>([])
+  const [loading, setLoading] = useState(true)
 
-  // TODO: Week 2 - fetch from /api/v1/documents/statistics
-  // TODO: Week 2 - fetch recent documents from /api/v1/documents?limit=5
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [statsRes, docsRes] = await Promise.all([
+        getDocumentStatistics(),
+        listDocuments({ page: 1, page_size: 5 }),
+      ])
+      setStats(statsRes)
+      setDocuments(docsRes.items)
+    } catch {
+      // silently fail, initial data already 0
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+    return refreshDashboard.subscribe(fetchData)
+  }, [fetchData])
+
+  const s = stats ?? { total: 0, pending: 0, approved: 0, rejected: 0, processing: 0, failed: 0 }
+
+  const statCards = [
+    { title: '已上传文档数', value: s.total, icon: <FileOutlined />, accent: tokens.navyLight, gradient: 'linear-gradient(135deg, #ebf4ff 0%, #dbeafe 100%)' },
+    { title: '待审核数', value: s.pending, icon: <ClockCircleOutlined />, accent: tokens.amber, gradient: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)' },
+    { title: '审核通过数', value: s.approved, icon: <CheckCircleOutlined />, accent: tokens.emerald, gradient: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)' },
+  ]
 
   return (
     <div>
@@ -102,72 +114,40 @@ export default function TeacherHomePage() {
       </Title>
 
       {/* ═══ Statistics Cards ═══ */}
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        {statCards.map((card) => (
-          <Col xs={24} sm={12} lg={8} key={card.title}>
-            <Card
-              style={{
-                background: card.gradient,
-                borderLeft: `4px solid ${card.accent}`,
-                borderRadius: 10,
-                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-              }}
-            >
-              <Statistic
-                title={
-                  <span style={{ color: tokens.slateMuted, fontSize: 14 }}>
-                    {card.title}
-                  </span>
-                }
-                value={card.value}
-                prefix={
-                  <span style={{ color: card.accent, marginRight: 8, fontSize: 20 }}>
-                    {card.icon}
-                  </span>
-                }
-                valueStyle={{
-                  color: tokens.slate,
-                  fontWeight: 700,
-                  fontSize: 28,
+      <Spin spinning={loading}>
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          {statCards.map((card) => (
+            <Col xs={24} sm={12} lg={8} key={card.title}>
+              <Card
+                style={{
+                  background: card.gradient,
+                  borderLeft: `4px solid ${card.accent}`,
+                  borderRadius: 10,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
                 }}
-              />
-            </Card>
-          </Col>
-        ))}
-      </Row>
+              >
+                <Statistic
+                  title={<span style={{ color: tokens.slateMuted, fontSize: 14 }}>{card.title}</span>}
+                  value={card.value}
+                  prefix={<span style={{ color: card.accent, marginRight: 8, fontSize: 20 }}>{card.icon}</span>}
+                  styles={{ content: { color: tokens.slate, fontWeight: 700, fontSize: 28 } }}
+                />
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </Spin>
 
       {/* ═══ Quick Actions ═══ */}
-      <Card
-        style={{
-          marginTop: 16,
-          borderRadius: 10,
-          border: `1px solid ${tokens.border}`,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: 12,
-          }}
-        >
-          <span
-            style={{
-              color: tokens.navy,
-              fontWeight: 600,
-              fontSize: 16,
-            }}
-          >
-            快捷操作
-          </span>
+      <Card style={{ marginTop: 16, borderRadius: 10, border: `1px solid ${tokens.border}` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <span style={{ color: tokens.navy, fontWeight: 600, fontSize: 16 }}>快捷操作</span>
           <Space size="middle">
             <Button
               type="primary"
               icon={<UploadOutlined />}
               size="large"
-              onClick={() => navigate('/teacher/upload')}
+              onClick={() => navigate('/teacher/documents/upload')}
               style={{
                 background: tokens.navy,
                 borderColor: tokens.navy,
@@ -200,32 +180,17 @@ export default function TeacherHomePage() {
       </Card>
 
       {/* ═══ Recent Uploads Table ═══ */}
-      <Card
-        style={{
-          marginTop: 16,
-          borderRadius: 10,
-          border: `1px solid ${tokens.border}`,
-        }}
-      >
+      <Card style={{ marginTop: 16, borderRadius: 10, border: `1px solid ${tokens.border}` }}>
         <div style={{ marginBottom: 16 }}>
-          <span
-            style={{
-              color: tokens.navy,
-              fontWeight: 600,
-              fontSize: 16,
-            }}
-          >
-            最近上传
-          </span>
+          <span style={{ color: tokens.navy, fontWeight: 600, fontSize: 16 }}>最近上传</span>
         </div>
         <Table
           columns={columns}
-          dataSource={[]}
+          dataSource={documents}
           rowKey="id"
-          locale={{
-            emptyText: <Empty description="暂无上传文档" />,
-          }}
+          locale={{ emptyText: <Empty description="暂无上传文档" /> }}
           pagination={false}
+          loading={loading}
         />
       </Card>
     </div>

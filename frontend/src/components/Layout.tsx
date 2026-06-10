@@ -26,7 +26,7 @@ const menuMap: Record<string, { key: string; icon: React.ReactNode; label: strin
   ],
   teacher: [
     { key: '/teacher', icon: <HomeOutlined />, label: '首页' },
-    { key: '/teacher/upload', icon: <UploadOutlined />, label: '上传文档' },
+    { key: '/teacher/documents/upload', icon: <UploadOutlined />, label: '上传文档' },
     { key: '/teacher/documents', icon: <FileOutlined />, label: '文档管理' },
   ],
   admin: [
