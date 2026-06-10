@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal, engine, Base
 from app.core.security import hash_password
-from app.models.user import User
+from app.models import User, Course, Document, Chunk, QAHistory, Feedback, AuditLog, RefreshToken
 
 
 async def init_database():

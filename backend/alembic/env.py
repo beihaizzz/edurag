@@ -8,17 +8,17 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import settings
 from app.core.database import Base
 
-# 导入所有模型，确保 Base.metadata 包含所有表
-from app.models import (  # noqa: F401
-    user,
-    course,
-    document,
-    chunk,
-    qa_history,
-    feedback,
-    audit_log,
-    refresh_token,
-)
+# Import all models so Base.metadata includes all tables
+from app.models import User, Course, Document, Chunk, QAHistory, Feedback, AuditLog, RefreshToken  # noqa: F401
+# Ensure all models are registered with Base.metadata
+assert User is not None
+assert Course is not None
+assert Document is not None
+assert Chunk is not None
+assert QAHistory is not None
+assert Feedback is not None
+assert AuditLog is not None
+assert RefreshToken is not None
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_SYNC)
