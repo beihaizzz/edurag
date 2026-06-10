@@ -22,8 +22,8 @@
 
 | 阶段 | 周期 | 状态 |
 |------|------|------|
-| 第 1 周 — 准备阶段 | 06-06 ~ 06-12 | 🔄 进行中（Day 5: 环境验证 + 前端设计，待用户确认） |
-| 第 2 周 — 基础模块实现 | 06-13 ~ 06-19 | 🔲 未开始 |
+| 第 1 周 — 准备阶段 | 06-06 ~ 06-12 | ✅ 完成 |
+| 第 2 周 — 基础模块实现 | 06-13 ~ 06-19 | ✅ 完成（提前完成，实际 06-10） |
 | 第 3 周 — 核心功能 + 前沿增强 | 06-20 ~ 06-26 | 🔲 未开始 |
 | 第 4 周 — 整合、测试、文档与答辩准备 | 06-27 ~ 07-03 | 🔲 未开始 |
 
@@ -44,6 +44,39 @@
 | 2026-06-10 | ⏳ 等待：DeepSeek API Key 填入 + bge 模型下载 + 前端设计确认 |
 | 2026-06-10 | ✅ 集成 SiliconFlow bge-m3 API 替代本地模型（解决 HF 被墙问题） |
 | 2026-06-10 | ✅ 完成 3 个门户首页开发（StudentHomePage / TeacherHomePage / AdminHomePage），TypeScript + Vite build 通过 |
+| 2026-06-10 | ✅ 后端服务启动正常，register / login / me / refresh 全链路调通 |
+| 2026-06-10 | 🔧 修复：JWT sub 字段类型（int→str）、UserInfo created_at 类型（str→datetime）、register 缺少 db.commit()、模型文件循环引用合并、alembic.ini 编码、前端 router SPA fallback |
+| 2026-06-10 | ✅ 第 2 周后端基础设施完成：3 个 services（文档解析/切分/向量存储）、6 个 API routers（courses/documents/search/qa/feedback/admin）、4 个 schemas、main.py 路由注册 |
+| 2026-06-10 | ✅ 集成测试通过：上传 → 解析(7 chunks) → 向量化 → 审核 → 关键词检索全链路 |
+| 2026-06-10 | 🔄 第 2 周前端页面开发中（文档上传/检索/问答） |
+| 2026-06-10 | ✅ 前端 4 个新页面完成：DocumentUploadPage、DocumentListPage、SearchPage、QAPage |
+| 2026-06-10 | ✅ 管理端页面全部接入真实 API：ReviewList（审核）、UserManage（用户管理）、Dashboard（数据统计）、AdminHomePage（首页仪表盘） |
+| 2026-06-10 | ✅ 跨组件刷新机制：`services/refresh.ts` 事件总线，上传/审核后触发首页数据刷新 |
+| 2026-06-10 | 🔧 修复：AdminHomePage 数据显示 0（根因：用户在看 /admin 首页非 /admin/dashboard 子页）、TeacherHomePage 接入文档统计 API、StudentHomePage 接入课程 API |
+| 2026-06-10 | ✅ 新增后端 API：`GET /documents/statistics`，按角色返回文档计数 |
+| 2026-06-10 | 🧹 清理：删除旧占位文件 DocumentManage.tsx |
+
+---
+
+## 第 2 周自查清单
+
+| # | 检查项 | 状态 | 备注 |
+|:---:|------|:---:|------|
+| 1 | 课程 CRUD 接口正常 | ✅ | POST/GET/PUT/DELETE /courses |
+| 2 | 文档上传 + 处理管线完整 | ✅ | 上传 → docling 解析 → langchain 切分 → ChromaDB 向量化 |
+| 3 | 关键词检索可用 | ✅ | ILIKE 模糊匹配 + 课程/类型筛选 + 分页 |
+| 4 | 语义检索可用 | ✅ | ChromaDB 余弦相似度，bge-m3 1024d |
+| 5 | 混合检索可用 | ✅ | keyword + semantic 双模式 |
+| 6 | RAG 问答可用 | ✅ | DeepSeek + LCEL，含来源引用 |
+| 7 | 管理端审核功能完整 | ✅ | 通过/驳回 + audit_logs |
+| 8 | 用户管理功能完整 | ✅ | 列表/角色筛选/禁用启用/重置密码 |
+| 9 | 问答历史可查看 | ✅ | 按用户分页 + 详情回溯 |
+| 10 | 反馈功能完整 | ✅ | 提交/修改/撤销 + 统计 |
+| 11 | 教师首页接入真实数据 | ✅ | 文档统计 + 最近上传表 |
+| 12 | 学生首页接入真实数据 | ✅ | 课程列表从 API 获取 |
+| 13 | 管理端首页接入真实数据 | ✅ | 6 张统计卡 + 动态待办 |
+| 14 | 跨组件刷新机制 | ✅ | refresh.ts 事件总线 |
+| 15 | TypeScript + Vite 编译零错误 | ✅ | 2026-06-10 验证通过 |
 
 ---
 
@@ -52,12 +85,12 @@
 | # | 检查项 | 状态 | 备注 |
 |:---:|------|:---:|------|
 | 1 | PostgreSQL 正常运行 | ✅ | 原生安装 v17，端口 5432 已监听 |
-| 2 | ChromaDB 可正常工作 | ⚠️ | Python 包已安装，但 Docker ChromaDB 未启动（本机无 Docker，改用 Python 嵌入式模式） |
-| 3 | Alembic 迁移可执行 | ⏳ | 需先运行 `scripts/setup_db.py` 创建 eduraq 数据库 |
-| 4 | 注册→登录→me→刷新 token 全链路可调通 | ⏳ | 后端代码已完成，待数据库就绪后验证 |
-| 5 | admin 默认账号可登录 | ⏳ | 待数据库初始化后验证 |
-| 6 | JWT 角色鉴权正常 | ⏳ | 代码已实现，待集成测试 |
+| 2 | ChromaDB 可正常工作 | ✅ | Python PersistentClient 嵌入式模式，collection eduraq_chunks 正常 |
+| 3 | Alembic 迁移可执行 | ✅ | `scripts/init_db.py` 成功建 8 张表 + 默认账号 |
+| 4 | 注册→登录→me→刷新 token 全链路可调通 | ✅ | 全链路验证通过（admin001 + stu999） |
+| 5 | admin 默认账号可登录 | ✅ | admin001/Admin@123 登录成功 |
+| 6 | JWT 角色鉴权正常 | ✅ | `get_current_user` + `require_role` 正常工作 |
 | 7 | 前端项目骨架可启动，路由跳转正常 | ✅ | 3 个门户首页已完成，全 14 页面路由正常 |
-| 8 | DeepSeek API Key 已配置 | ❌ | 需用户填入 `.env` |
+| 8 | DeepSeek API Key 已配置 | ✅ | 已填入 `.env` |
 | 9 | bge-large-zh-v1.5 模型已下载 | ✅ | 改用 SiliconFlow bge-m3 API，无需下载 |
 | 10 | 5 门课程资料已收集 | ⏳ | 资料已放入 docs/，待确认格式和数量 |
