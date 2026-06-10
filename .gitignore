@@ -50,3 +50,6 @@ final_output.txt
 # Office temporary files
 ~$*.doc
 ~$*.docx
+
+# Tool generated
+.sisyphus/
