@@ -16,7 +16,7 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ):
     """解析 JWT 获取当前登录用户"""
-    from app.models.user import User
+    from app.models import User
 
     token = credentials.credentials
     payload = decode_token(token)

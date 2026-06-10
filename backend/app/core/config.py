@@ -25,8 +25,15 @@ class Settings(BaseSettings):
     DEEPSEEK_MODEL: str = "deepseek-v4-flash"
 
     # ── Embedding ────────────────────────────
-    EMBEDDING_MODEL: str = "BAAI/bge-large-zh-v1.5"
+    # provider: "siliconflow"（推荐）| "local"（需下载模型）
+    EMBEDDING_PROVIDER: str = "siliconflow"
+    EMBEDDING_MODEL: str = "BAAI/bge-m3"
     EMBEDDING_DEVICE: str = "cpu"
+    EMBEDDING_DIM: int = 1024
+
+    # SiliconFlow API（EMBEDDING_PROVIDER=siliconflow 时使用）
+    SILICONFLOW_API_KEY: str = ""
+    SILICONFLOW_BASE_URL: str = "https://api.siliconflow.cn/v1"
 
     # ── 文件上传 ─────────────────────────────
     UPLOAD_DIR: str = "./data/files"

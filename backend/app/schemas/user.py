@@ -1,5 +1,7 @@
 """认证模块 Pydantic 模型"""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -54,6 +56,6 @@ class UserInfo(BaseModel):
     email: str | None = None
     force_password_change: bool = False
     is_active: bool = True
-    created_at: str | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
