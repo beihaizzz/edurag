@@ -32,7 +32,7 @@ async def get_current_user(
             detail="请使用 access token",
         )
 
-    user_id: int = payload.get("sub")
+    user_id: int = int(payload.get("sub"))
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

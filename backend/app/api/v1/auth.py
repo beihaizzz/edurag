@@ -72,8 +72,8 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         return APIResponse(code=40003, message="账号已被禁用，请联系管理员")
 
     # 生成 tokens
-    access_token = create_access_token(data={"sub": user.id, "role": user.role})
-    refresh_token = create_refresh_token(data={"sub": user.id, "role": user.role})
+    access_token = create_access_token(data={"sub": str(user.id), "role": user.role})
+    refresh_token = create_refresh_token(data={"sub": str(user.id), "role": user.role})
 
     return APIResponse(
         data={
@@ -104,8 +104,8 @@ async def refresh_token(
     if user is None or not user.is_active:
         return APIResponse(code=40004, message="用户不存在或已被禁用")
 
-    new_access = create_access_token(data={"sub": user.id, "role": user.role})
-    new_refresh = create_refresh_token(data={"sub": user.id, "role": user.role})
+    new_access = create_access_token(data={"sub": str(user.id), "role": user.role})
+    new_refresh = create_refresh_token(data={"sub": str(user.id), "role": user.role})
 
     return APIResponse(
         data={
@@ -135,6 +135,7 @@ async def change_password(
 
     user.password_hash = hash_password(req.new_password)
     await db.flush()
+    await db.commit()
 
     return APIResponse(message="密码修改成功")
 
@@ -152,5 +153,6 @@ async def reset_password(
     user.password_hash = hash_password(req.new_password)
     user.force_password_change = False
     await db.flush()
+    await db.commit()
 
     return APIResponse(message="密码修改成功，请重新登录")

@@ -8,7 +8,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1.admin import router as admin_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.courses import router as courses_router
+from app.api.v1.documents import router as documents_router
+from app.api.v1.feedback import router as feedback_router
+from app.api.v1.qa import router as qa_router
+from app.api.v1.search import router as search_router
 from app.core.config import settings
 
 
@@ -35,7 +41,13 @@ app.add_middleware(
 )
 
 # 注册路由
-app.include_router(auth_router)
+app.include_router(auth_router)  # prefix already in router: /api/v1/auth
+app.include_router(courses_router, prefix="/api/v1")
+app.include_router(documents_router, prefix="/api/v1")
+app.include_router(search_router, prefix="/api/v1")
+app.include_router(qa_router, prefix="/api/v1")
+app.include_router(feedback_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1")
 
 
 @app.get("/health")
