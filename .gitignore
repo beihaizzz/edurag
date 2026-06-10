@@ -53,3 +53,7 @@ final_output.txt
 
 # Tool generated
 .sisyphus/
+
+# Uploaded files and vector store
+backend/data/
+data/
