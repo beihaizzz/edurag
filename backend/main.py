@@ -3,6 +3,13 @@ EduRAG - 校园课程资料智能检索与问答服务系统
 FastAPI 应用入口
 """
 
+import asyncio
+import sys
+
+# Windows: psycopg 异步模式必须使用 SelectorEventLoop
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
