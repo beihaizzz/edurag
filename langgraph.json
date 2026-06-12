@@ -1,0 +1,14 @@
+{
+  "graphs": {
+    "rag": "./backend/app/graph/builder.py:build_rag_graph"
+  },
+  "env": "./backend/.env",
+  "python_version": "3.12",
+  "dependencies": [
+    "./backend"
+  ],
+  "checkpointer": {
+    "backend": "custom",
+    "path": "./backend/app/graph/checkpointer.py:get_checkpointer"
+  }
+}
