@@ -1,56 +1,60 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import AuthGuard from '../components/AuthGuard'
 import Layout from '../components/Layout'
+import StudentLayout from '../components/StudentLayout'
 import LoginPage from '../pages/auth/LoginPage'
 import RegisterPage from '../pages/auth/RegisterPage'
 import ChangePasswordPage from '../pages/auth/ChangePasswordPage'
 
-// 学生页面
 import StudentHomePage from '../pages/student/StudentHomePage'
 import SearchPage from '../pages/student/SearchPage'
 import QAPage from '../pages/student/QAPage'
+import QAHistory from '../pages/student/QAHistory'
 
-// 教师页面
 import TeacherHomePage from '../pages/teacher/TeacherHomePage'
 import DocumentUploadPage from '../pages/teacher/DocumentUploadPage'
 import DocumentListPage from '../pages/teacher/DocumentListPage'
 
-// 管理员页面
 import AdminHomePage from '../pages/admin/AdminHomePage'
 import ReviewList from '../pages/admin/ReviewList'
 import UserManage from '../pages/admin/UserManage'
 import Dashboard from '../pages/admin/Dashboard'
 
 const router = createBrowserRouter([
-  // ── 公开路由 ────────────────────────────────────
+  // ── 公开路由 ──
   { path: '/login', element: <LoginPage /> },
   { path: '/register', element: <RegisterPage /> },
 
-  // ── 需要登录 ─────────────────────────────────────
+  // ── 需要登录 ──
   {
     element: <AuthGuard />,
     children: [
       { path: '/change-password', element: <ChangePasswordPage /> },
 
-      // ── 带 Layout 的路由 ──────────────────────────
+      // ── 学生端（顶部导航栏布局） ──
       {
-        element: <Layout />,
+        element: <AuthGuard role="student" />,
         children: [
-          // 通用检索与问答（所有认证用户）
-          { path: '/search', element: <SearchPage /> },
-          { path: '/qa', element: <QAPage /> },
-          { path: '/qa/:id', element: <QAPage /> },
-
-          // 学生端
           {
-            element: <AuthGuard role="student" />,
+            element: <StudentLayout />,
             children: [
               { path: '/student', element: <StudentHomePage /> },
               { path: '/student/search', element: <SearchPage /> },
               { path: '/student/qa', element: <QAPage /> },
-              { path: '/student/qa/:id', element: <QAPage /> },
+              { path: '/student/history', element: <QAHistory /> },
             ],
           },
+        ],
+      },
+
+      // ── 教师/管理员（侧边栏布局） ──
+      {
+        element: <Layout />,
+        children: [
+          // 通用检索与问答
+          { path: '/search', element: <SearchPage /> },
+          { path: '/qa', element: <QAPage /> },
+          { path: '/qa/:id', element: <QAPage /> },
 
           // 教师端
           {
@@ -62,7 +66,7 @@ const router = createBrowserRouter([
             ],
           },
 
-          // 管理端也能访问文档管理（带审核功能）
+          // 管理端也能访问文档管理
           {
             element: <AuthGuard role="admin" />,
             children: [
@@ -86,7 +90,7 @@ const router = createBrowserRouter([
     ],
   },
 
-  // ── 兜底 ────────────────────────────────────────
+  // ── 兜底 ──
   { path: '/', element: <Navigate to="/login" replace /> },
   { path: '*', element: <Navigate to="/login" replace /> },
 ])
