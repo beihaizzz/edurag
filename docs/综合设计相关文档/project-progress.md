@@ -55,6 +55,11 @@
 | 2026-06-10 | 🔧 修复：AdminHomePage 数据显示 0（根因：用户在看 /admin 首页非 /admin/dashboard 子页）、TeacherHomePage 接入文档统计 API、StudentHomePage 接入课程 API |
 | 2026-06-10 | ✅ 新增后端 API：`GET /documents/statistics`，按角色返回文档计数 |
 | 2026-06-10 | 🧹 清理：删除旧占位文件 DocumentManage.tsx |
+| 2026-06-12 | 📐 架构升级设计：RAG 模块从 LCEL 链式编排迁移至 LangGraph StateGraph，完成 5 Node + 3 路由 + 2 终点的 graph 拓扑设计 |
+| 2026-06-12 | 🔍 技术选型：Web Search 工具选定 Tavily（AI Agent 专用，¥8/1K 次，免费 1000 次/月，返回 relevance score）；确认暂不需要 LangGraph 原生 built-in agent |
+| 2026-06-12 | 🛡️ 安全设计升级：从单层正则过滤升级为三层防护体系（L0 正则快速过滤 → L1 LLM 意图分类 → L3 LLM 输出审查），支持简中/英文/文言文多语言一致拒答 |
+| 2026-06-12 | 🗄️ 持久化重构：废弃 qa_history 表，改用 LangGraph AsyncPostgresSaver checkpointer + user_sessions 轻量索引表 |
+| 2026-06-12 | 📝 6 份设计文档同步更新至 v1.3：技术设计 / 详细设计 / 数据库设计 / API 接口设计 / 项目功能点 / 项目开发计划 |
 
 ---
 

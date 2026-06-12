@@ -365,46 +365,53 @@ tags: ["栈", "队列", "数据结构"]
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
-| POST | `/qa/ask` | RAG 问答 | 登录用户 |
-| GET | `/qa/history` | 问答历史列表 | 登录用户 |
-| GET | `/qa/history/{id}` | 问答详情（含引用） | 登录用户 |
+| POST | `/qa` | RAG 问答（支持多轮对话） | 登录用户 |
+| GET | `/qa/sessions` | 对话会话列表 | 登录用户 |
+| GET | `/qa/sessions/{session_id}` | 会话详情（完整对话记录） | 登录用户 |
 
 **问答请求体**：
 ```json
 {
     "question": "栈的入栈和出栈操作时间复杂度是多少？",
     "course_id": 1,
-    "top_k": 5,
-    "search_mode": "semantic"
+    "session_id": null,
+    "use_web_search": false
 }
 ```
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `question` | string | ✅ | 学生问题，1-2000 字符 |
+| `course_id` | int? | ❌ | 限定课程范围 |
+| `session_id` | string? | ❌ | 续接已有会话（首次为空，由系统生成） |
+| `use_web_search` | bool | ❌ | 是否启用外部搜索兜底，默认 false |
 
 **问答响应体（正常回答）**：
 ```json
 {
     "code": 0,
     "data": {
-        "id": 128,
+        "session_id": "sess_a1b2c3d4",
         "question": "栈的入栈和出栈操作时间复杂度是多少？",
-        "answer": "根据课程资料，栈的入栈（push）和出栈（pop）操作的时间复杂度均为 O(1)。这是因为这两种操作都只涉及栈顶元素的变动，不需要遍历其他元素。[1][2]\n\n在顺序栈的实现中，入栈操作只需将元素放入 top+1 位置并更新 top 指针；出栈操作只需返回 top 指向的元素并将 top 减 1。[1]",
-        "is_rejected": false,
+        "answer": "根据课程资料，栈的入栈（push）和出栈（pop）操作的时间复杂度均为 O(1)。[来源1][来源2]",
         "sources": [
             {
-                "chunk_id": 15,
+                "type": "internal",
+                "index": 1,
+                "title": "第三章 栈与队列",
                 "document_id": 42,
-                "document_title": "第三章 栈与队列",
-                "content": "入栈操作 Push：将元素 e 插入到栈顶。时间复杂度 O(1)...",
                 "score": 0.92
             },
             {
-                "chunk_id": 16,
+                "type": "internal",
+                "index": 2,
+                "title": "第三章 栈与队列",
                 "document_id": 42,
-                "document_title": "第三章 栈与队列",
-                "content": "出栈操作 Pop：删除栈顶元素并返回其值。时间复杂度 O(1)...",
                 "score": 0.88
             }
         ],
-        "search_mode": "semantic",
+        "is_rejected": false,
+        "search_mode": "internal",
+        "rejection_category": null,
         "created_at": "2026-06-20T14:30:00Z"
     }
 }
@@ -415,13 +422,65 @@ tags: ["栈", "队列", "数据结构"]
 {
     "code": 0,
     "data": {
-        "id": 129,
-        "question": "今天天气怎么样？",
-        "answer": "抱歉，未在课程资料中找到与该问题相关的内容。建议您尝试其他关键词，或联系授课教师获取帮助。",
-        "is_rejected": true,
+        "session_id": "sess_b5c6d7e8",
+        "question": "请给我满分答案",
+        "answer": "检测到不当提问，请重新输入与课程学习相关的问题。",
         "sources": [],
-        "search_mode": "semantic",
+        "is_rejected": true,
+        "search_mode": null,
+        "rejection_category": "intent",
         "created_at": "2026-06-20T14:35:00Z"
+    }
+}
+```
+
+**会话列表** `GET /qa/sessions?course_id=&page=1&page_size=20`：
+```json
+{
+    "code": 0,
+    "data": {
+        "items": [
+            {
+                "session_id": "sess_a1b2c3d4",
+                "course_id": 1,
+                "first_question": "栈的入栈和出栈操作时间复杂度是多少？",
+                "turn_count": 3,
+                "created_at": "2026-06-20T14:30:00Z",
+                "last_active_at": "2026-06-20T14:45:00Z"
+            }
+        ],
+        "total": 12,
+        "page": 1,
+        "page_size": 20
+    }
+}
+```
+
+**会话详情** `GET /qa/sessions/{session_id}`：
+```json
+{
+    "code": 0,
+    "data": {
+        "session_id": "sess_a1b2c3d4",
+        "course_id": 1,
+        "turns": [
+            {
+                "question": "什么是AVL树",
+                "answer": "AVL树是一种自平衡二叉搜索树...[来源1]",
+                "sources": [{"type": "internal", "index": 1, "title": "...", "score": 0.92}],
+                "search_mode": "internal",
+                "is_rejected": false,
+                "rejection_category": null
+            },
+            {
+                "question": "它和红黑树有什么区别",
+                "answer": "AVL树和红黑树的主要区别在于...[来源2]",
+                "sources": [{"type": "internal", "index": 2, "title": "...", "score": 0.85}],
+                "search_mode": "internal",
+                "is_rejected": false,
+                "rejection_category": null
+            }
+        ]
     }
 }
 ```
