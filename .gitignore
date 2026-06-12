@@ -57,3 +57,7 @@ final_output.txt
 # Uploaded files and vector store
 backend/data/
 data/
+
+# Runtime generated
+.langgraph_api/
+.claude/
