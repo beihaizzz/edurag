@@ -60,6 +60,15 @@
 | 2026-06-12 | 🛡️ 安全设计升级：从单层正则过滤升级为三层防护体系（L0 正则快速过滤 → L1 LLM 意图分类 → L3 LLM 输出审查），支持简中/英文/文言文多语言一致拒答 |
 | 2026-06-12 | 🗄️ 持久化重构：废弃 qa_history 表，改用 LangGraph AsyncPostgresSaver checkpointer + user_sessions 轻量索引表 |
 | 2026-06-12 | 📝 6 份设计文档同步更新至 v1.3：技术设计 / 详细设计 / 数据库设计 / API 接口设计 / 项目功能点 / 项目开发计划 |
+| 2026-06-12 | 🐛 Bug 修复：Windows + uvicorn 0.36+ ProactorEventLoop 与 asyncpg 不兼容 → 创建 `backend/run.py`，`loop="none"` 强制 SelectorEventLoop |
+| 2026-06-12 | 🐛 Bug 修复：ChromaDB 默认 L2 距离导致相似度分数异常 → 改为 `hnsw:space=cosine`，score = 1 - distance |
+| 2026-06-12 | 🐛 Bug 修复：httpx 继承系统代理导致 Embedding API 不可达 → 所有 AsyncClient 加 `proxy=None` |
+| 2026-06-12 | 🐛 Bug 修复：文档处理未在 chunk metadata 中包含 `course_id` → 修复后 where_filter 按课程过滤生效 |
+| 2026-06-12 | 🐛 Bug 修复：QA 端点 `done` 事件 `datetime.now(timezone.utc)` 与 PostgreSQL `TIMESTAMP WITHOUT TIME ZONE` 不兼容 → 改用 `datetime.utcnow()` |
+| 2026-06-12 | 🔬 深度调试：`rag_search()` 节点服务端返回空结果 → 根因确认 ChromaDB collection 数据正常，问题出在 `generate_answer` 引用缺失 + LLM 审核误拒 |
+| 2026-06-12 | 🔧 架构改进：`generate_answer` 从自由文本改为 **JSON Mode 结构化输出**（`response_format={"type": "json_object"}`），强制要求 `{"answer": "..[来源N]..", "citations": [1]}` 格式，消除引用丢失的不确定性 |
+| 2026-06-12 | ⚠️ 发现关键约束：`deepseek-v4-flash` 为推理模型（thinking mode），设置显式 `max_tokens` 会导致全部 token 被 thinking 消耗、可见输出为空。所有 LLM 调用点移除 `max_tokens` 显式限制 |
+| 2026-06-12 | ✅ RAG 问答端到端全链路调通：上传 → 处理 → 审核 → 向量检索 → JSON 生成（含引用）→ 审核 PASS → SSE 流式返回 |
 
 ---
 
