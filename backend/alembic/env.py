@@ -10,6 +10,7 @@ from app.core.database import Base
 
 # Import all models so Base.metadata includes all tables
 from app.models import User, Course, Document, Chunk, QAHistory, Feedback, AuditLog, RefreshToken  # noqa: F401
+from app.models.user_session import UserSession  # noqa: F401
 # Ensure all models are registered with Base.metadata
 assert User is not None
 assert Course is not None
@@ -19,6 +20,7 @@ assert QAHistory is not None
 assert Feedback is not None
 assert AuditLog is not None
 assert RefreshToken is not None
+assert UserSession is not None
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_SYNC)

@@ -42,6 +42,7 @@ class User(Base):
     documents = relationship("Document", back_populates="uploader", foreign_keys="Document.uploader_id")
     qa_histories = relationship("QAHistory", back_populates="user")
     feedbacks = relationship("Feedback", back_populates="user")
+    user_sessions = relationship("UserSession", back_populates="user", lazy="selectin")
 
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username}, role={self.role})>"
@@ -65,6 +66,7 @@ class Course(Base):
     teacher = relationship("User", foreign_keys=[teacher_id])
     documents = relationship("Document", back_populates="course")
     qa_histories = relationship("QAHistory", back_populates="course")
+    user_sessions = relationship("UserSession", back_populates="course", lazy="selectin")
 
     def __repr__(self):
         return f"<Course(id={self.id}, name={self.name})>"
