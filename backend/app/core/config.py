@@ -63,6 +63,21 @@ class Settings(BaseSettings):
     # ── 日志 ─────────────────────────────────
     LOG_LEVEL: str = "INFO"
 
+    # ── Tavily Web Search ───────────────────────
+    TAVILY_API_KEY: str = ""
+    TAVILY_MAX_RESULTS: int = 5
+    TAVILY_SEARCH_TIMEOUT: float = 10.0
+
+    # ── LangGraph Checkpointer ──────────────────
+    CHECKPOINT_TYPE: str = "postgres"  # "postgres" | "memory"
+    CHECKPOINT_DB_URL: str = "postgresql://eduraq:eduraq@localhost:5432/eduraq"
+
+    # ── LangSmith Tracing ──────────────────────
+    LANGSMITH_TRACING: bool = False
+    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
+    LANGSMITH_API_KEY: str = ""
+    LANGSMITH_PROJECT: str = "eduraq"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "allow"}
 
 
