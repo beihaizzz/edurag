@@ -43,6 +43,7 @@ class QaCreate(BaseModel):
     """问答请求"""
     question: str = Field(min_length=1, max_length=2000)
     course_id: int | None = None
+    use_web_search: bool = False
 
 
 class QaSource(BaseModel):
