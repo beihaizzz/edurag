@@ -27,6 +27,7 @@ class VectorStoreService:
         )
         self._collection = self._client.get_or_create_collection(
             name="eduraq_chunks",
+            metadata={"hnsw:space": "cosine"},
         )
         logger.info(
             "VectorStoreService initialized (dir=%s, dim=%d)",
@@ -102,9 +103,9 @@ class VectorStoreService:
         for i in range(len(ids_batch)):
             meta = metas_batch[i] if i < len(metas_batch) else {}
             content = docs_batch[i] if i < len(docs_batch) else ""
-            # ChromaDB default distance is cosine → 1 − distance = cosine similarity
+            # ChromaDB cosine distance ∈ [0, 2] → 1 − distance = cosine similarity
             distance = dists_batch[i] if i < len(dists_batch) else 0.0
-            score = 1.0 - distance
+            score = 1.0 - distance if distance <= 2.0 else 1.0 / (1.0 + distance)
 
             output.append({
                 "chunk_id": int(ids_batch[i]),

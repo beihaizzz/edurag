@@ -74,6 +74,7 @@ class SiliconFlowEmbedding(BaseEmbedding):
                 "Content-Type": "application/json",
             },
             timeout=30.0,
+            proxy=None,  # 不走系统代理（国内直连硅基流动更快）
         )
 
     @property
