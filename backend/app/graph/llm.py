@@ -41,6 +41,7 @@ async def invoke_llm(
     temperature: float = 0.3,
     max_tokens: int | None = None,
     timeout: float = 30.0,
+    model_kwargs: dict | None = None,
 ) -> str:
     """Call DeepSeek LLM with exponential backoff retry.
 
@@ -49,6 +50,8 @@ async def invoke_llm(
         temperature: Sampling temperature (default 0.3)
         max_tokens: Maximum output tokens (None = model default)
         timeout: Request timeout in seconds (default 30)
+        model_kwargs: Extra kwargs passed to ChatDeepSeek (e.g.
+            ``{"response_format": {"type": "json_object"}}`` for JSON mode)
 
     Returns:
         Response content as stripped string
@@ -76,6 +79,7 @@ async def invoke_llm(
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
+            model_kwargs=model_kwargs or {},
         )
         response = await llm.ainvoke(list(messages))
         return response.content.strip()

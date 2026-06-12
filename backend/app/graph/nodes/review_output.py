@@ -25,10 +25,8 @@ def _mechanical_check(answer: str, sources: list[dict], search_mode: str) -> str
     citations = _CITATION_RE.findall(answer)
     source_indices = {s.get("index", 0) for s in sources}
 
-    # If internal search mode, citations are expected
+    # If internal search mode, verify citation indices are valid
     if search_mode == "internal":
-        if not citations:
-            return "missing_citations"
         for _, num_str in citations:
             num = int(num_str)
             if num not in source_indices:
@@ -73,7 +71,6 @@ async def review_output(state: RAGState) -> dict:
         label = await invoke_llm(
             [HumanMessage(content=prompt)],
             temperature=0,
-            max_tokens=5,
             timeout=15.0,
         )
         label = label.upper()

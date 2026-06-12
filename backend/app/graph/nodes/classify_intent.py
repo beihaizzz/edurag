@@ -36,7 +36,7 @@ async def classify_intent(state: RAGState) -> dict:
     """Classify user question into NORMAL|CHEATING|SENSITIVE|ATTACK.
     
     L0: Regex check for obvious injection attacks.
-    L1: LLM classification via DeepSeek (temperature=0, max_tokens=10).
+    L1: LLM classification via DeepSeek (temperature=0).
     Fallback: Parse failure → NORMAL (avoid over-blocking).
     """
     question = state.get("question", "")
@@ -52,7 +52,6 @@ async def classify_intent(state: RAGState) -> dict:
         label = await invoke_llm(
             [HumanMessage(content=prompt)],
             temperature=0,
-            max_tokens=10,
             timeout=10.0,
         )
         label = label.upper()
