@@ -132,12 +132,15 @@ async def ask_question(
 
             # Update session timestamp
             await db.refresh(session_record)
-            session_record.updated_at = datetime.now(timezone.utc)
+            session_record.updated_at = datetime.utcnow()
             await db.commit()
 
-        except Exception:
-            logger.exception("SSE stream failed")
-            yield f"event: error\ndata: {json.dumps({'error': 'internal_error'})}\n\n"
+        except Exception as e:
+            import traceback,asyncio
+            loop_info = f"loop={type(asyncio.get_running_loop()).__name__} policy={type(asyncio.get_event_loop_policy()).__name__}"
+            detail = f"{type(e).__name__}: {e} | {loop_info}"
+            logger.exception("SSE stream failed: %s", detail)
+            yield f"event: error\ndata: {json.dumps({'error': 'internal_error', 'detail': detail, 'trace': traceback.format_exc()[-500:]})}\n\n"
 
     return StreamingResponse(
         event_stream(),

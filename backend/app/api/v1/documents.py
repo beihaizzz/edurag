@@ -452,7 +452,7 @@ async def process_document(
                     "chunk_id": cr.id,
                     "document_id": doc.id,
                     "content": cr.content,
-                    "metadata": {"title": doc.title},
+                    "metadata": {"title": doc.title, "course_id": doc.course_id},
                 }
                 for cr in chunk_records
             ]
