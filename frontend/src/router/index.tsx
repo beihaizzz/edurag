@@ -1,7 +1,8 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import AuthGuard from '../components/AuthGuard'
-import Layout from '../components/Layout'
 import StudentLayout from '../components/StudentLayout'
+import TeacherLayout from '../components/TeacherLayout'
+import AdminLayout from '../components/AdminLayout'
 import LoginPage from '../pages/auth/LoginPage'
 import RegisterPage from '../pages/auth/RegisterPage'
 import ChangePasswordPage from '../pages/auth/ChangePasswordPage'
@@ -18,7 +19,6 @@ import DocumentListPage from '../pages/teacher/DocumentListPage'
 import AdminHomePage from '../pages/admin/AdminHomePage'
 import ReviewList from '../pages/admin/ReviewList'
 import UserManage from '../pages/admin/UserManage'
-import Dashboard from '../pages/admin/Dashboard'
 
 const router = createBrowserRouter([
   // ── 公开路由 ──
@@ -47,42 +47,34 @@ const router = createBrowserRouter([
         ],
       },
 
-      // ── 教师/管理员（侧边栏布局） ──
+      // ── 教师端（顶部导航栏布局） ──
       {
-        element: <Layout />,
+        element: <AuthGuard role="teacher" />,
         children: [
-          // 通用检索与问答
-          { path: '/search', element: <SearchPage /> },
-          { path: '/qa', element: <QAPage /> },
-          { path: '/qa/:id', element: <QAPage /> },
-
-          // 教师端
           {
-            element: <AuthGuard role="teacher" />,
+            element: <TeacherLayout />,
             children: [
               { path: '/teacher', element: <TeacherHomePage /> },
               { path: '/teacher/documents/upload', element: <DocumentUploadPage /> },
               { path: '/teacher/documents', element: <DocumentListPage /> },
             ],
           },
+        ],
+      },
 
-          // 管理端也能访问文档管理
+      // ── 管理端（顶部导航栏布局） ──
+      {
+        element: <AuthGuard role="admin" />,
+        children: [
           {
-            element: <AuthGuard role="admin" />,
-            children: [
-              { path: '/teacher/documents/upload', element: <DocumentUploadPage /> },
-              { path: '/teacher/documents', element: <DocumentListPage /> },
-            ],
-          },
-
-          // 管理端
-          {
-            element: <AuthGuard role="admin" />,
+            element: <AdminLayout />,
             children: [
               { path: '/admin', element: <AdminHomePage /> },
               { path: '/admin/review', element: <ReviewList /> },
               { path: '/admin/users', element: <UserManage /> },
-              { path: '/admin/dashboard', element: <Dashboard /> },
+              // 管理端也能访问教师文档管理
+              { path: '/teacher/documents/upload', element: <DocumentUploadPage /> },
+              { path: '/teacher/documents', element: <DocumentListPage /> },
             ],
           },
         ],

@@ -8,6 +8,7 @@ import os
 
 import aiofiles
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -174,10 +175,14 @@ async def list_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """文档列表（分页 + 筛选）"""
+    """文档列表（分页 + 筛选）。教师只看自己上传的，管理员看全部。"""
     conditions = []
+
+    # 教师只能看自己的文档
+    if user.role == "teacher":
+        conditions.append(Document.uploader_id == user.id)
 
     if course_id is not None:
         conditions.append(Document.course_id == course_id)
@@ -218,6 +223,50 @@ async def list_documents(
             total_pages=total_pages,
         ).model_dump(mode="json")
     )
+
+
+# ── GET /documents/statistics ────────────────────────────────────────
+
+
+@router.get("/documents/statistics")
+async def get_document_statistics(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """文档统计（教师看自己的，admin 看全部）"""
+    base = select(func.count()).select_from(Document)
+    if user.role == "teacher":
+        base = base.where(Document.uploader_id == user.id)
+
+    total = (await db.execute(base)).scalar() or 0
+    pending = (await db.execute(base.where(Document.status == "pending"))).scalar() or 0
+    approved = (await db.execute(base.where(Document.status == "approved"))).scalar() or 0
+    rejected = (await db.execute(base.where(Document.status == "rejected"))).scalar() or 0
+
+    return APIResponse(data={
+        "total": total,
+        "pending": pending,
+        "approved": approved,
+        "rejected": rejected,
+    })
+
+
+# ── GET /documents/{id}/file ─────────────────────────────────────────
+
+
+@router.get("/documents/{document_id}/file")
+async def download_document_file(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """下载/预览文档原始文件"""
+    doc = await db.scalar(select(Document).where(Document.id == document_id))
+    if doc is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    if not os.path.isfile(doc.file_path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(doc.file_path, filename=doc.filename)
 
 
 # ── GET /documents/{id} ──────────────────────────────────────────────
@@ -475,29 +524,6 @@ async def process_document(
 
 
 # ── helper ─────────────────────────────────────────────────────────
-
-@router.get("/documents/statistics")
-async def get_document_statistics(
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """文档统计（教师看自己的，admin 看全部）"""
-    base = select(func.count()).select_from(Document)
-    if user.role == "teacher":
-        base = base.where(Document.uploader_id == user.id)
-
-    total = (await db.execute(base)).scalar() or 0
-    pending = (await db.execute(base.where(Document.status == "pending"))).scalar() or 0
-    approved = (await db.execute(base.where(Document.status == "approved"))).scalar() or 0
-    rejected = (await db.execute(base.where(Document.status == "rejected"))).scalar() or 0
-
-    return APIResponse(data={
-        "total": total,
-        "pending": pending,
-        "approved": approved,
-        "rejected": rejected,
-    })
-
 
 def _safe_filename(raw: str) -> str:
     """生成安全的存储文件名（保留扩展名，去除非安全字符）"""
