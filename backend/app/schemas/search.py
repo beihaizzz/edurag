@@ -44,6 +44,7 @@ class QaCreate(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     course_id: int | None = None
     use_web_search: bool = False
+    thread_id: str | None = Field(default=None, max_length=36)
 
 
 class QaSource(BaseModel):

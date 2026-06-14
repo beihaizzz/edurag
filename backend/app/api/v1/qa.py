@@ -45,21 +45,39 @@ async def ask_question(
     - reject: rejection with reason
     - done: final answer + sources + thread_id
     """
-    thread_id = str(uuid.uuid4())
     question = body.question
     course_id = body.course_id
     use_web_search = body.use_web_search
 
-    # Create UserSession record
-    session_record = UserSession(
-        thread_id=thread_id,
-        user_id=user.id,
-        course_id=course_id,
-        first_question=question,
-        turn_count=1,
-    )
-    db.add(session_record)
-    await db.commit()
+    # Determine thread_id: reuse existing or create new
+    raw_thread_id = body.thread_id
+    is_new_session = not (raw_thread_id and raw_thread_id.strip())
+    thread_id = raw_thread_id.strip() if raw_thread_id and raw_thread_id.strip() else str(uuid.uuid4())
+
+    if is_new_session:
+        session_record = UserSession(
+            thread_id=thread_id,
+            user_id=user.id,
+            course_id=course_id,
+            first_question=question,
+            turn_count=1,
+        )
+        db.add(session_record)
+        await db.commit()
+    else:
+        # Ownership check
+        result = await db.execute(
+            select(UserSession).where(
+                UserSession.thread_id == thread_id,
+                UserSession.user_id == user.id,
+            )
+        )
+        session = result.scalar_one_or_none()
+        if not session:
+            raise HTTPException(status_code=403, detail="Thread not found or not owned")
+        session.turn_count = (session.turn_count or 0) + 1
+        session_record = session
+        await db.commit()
 
     async def event_stream():
         try:
@@ -115,6 +133,11 @@ async def ask_question(
                         reason = node_output.get("rejection_reason", "")
                         yield f"event: reject\ndata: {json.dumps({'reason': reason, 'is_rejected': True})}\n\n"
 
+                    elif node_name == "rerank":
+                        in_count = node_output.get("input_count", 0)
+                        out_count = node_output.get("output_count", 0)
+                        yield f"event: rerank\ndata: {json.dumps({'input_count': in_count, 'output_count': out_count})}\n\n"
+
                     elif node_name == "return_answer":
                         pass  # handled in done event
 
@@ -129,6 +152,7 @@ async def ask_question(
             qa_record = QAHistory(
                 user_id=user.id,
                 course_id=course_id,
+                thread_id=thread_id,
                 question=question,
                 answer=state_values.get("answer", ""),
                 sources=state_values.get("sources", []),

@@ -146,6 +146,7 @@ class QAHistory(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     course_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("courses.id"), nullable=True)
+    thread_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, comment="LangGraph thread_id for session grouping")
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     sources: Mapped[list | None] = mapped_column(

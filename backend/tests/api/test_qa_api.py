@@ -15,7 +15,10 @@ Done event always contains: answer, sources, is_rejected, thread_id.
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app.models.models import QAHistory
+from app.models.user_session import UserSession
 from tests.fixtures import real_llm_available
 from tests.utils import assert_sse_event, parse_sse_events
 
@@ -267,4 +270,123 @@ class TestQaSSEStreaming:
         )
         assert response.status_code == 422, (
             f"Expected 422 for missing question, got {response.status_code}"
+        )
+
+    # ── Multi-turn session management ─────────────────────────────
+
+    @real_llm_available
+    @pytest.mark.asyncio
+    async def test_new_session_creates_session_and_qa_history(
+        self, async_client: AsyncClient, create_test_user, test_db
+    ):
+        """New session creates UserSession (turn_count=1) and QAHistory with matching thread_id."""
+        _, token = await create_test_user(role="student")
+
+        response = await async_client.post(
+            QA_URL,
+            json={"question": "什么是机器学习？", "use_web_search": False},
+            headers=_auth(token),
+            timeout=120.0,
+        )
+
+        assert response.status_code == 200
+        events = parse_sse_events(response.text)
+        done_event = assert_sse_event(events, "done")
+        tid = done_event["data"]["thread_id"]
+        assert tid, "Empty thread_id in done event"
+
+        # Verify UserSession
+        result = await test_db.execute(
+            select(UserSession).where(UserSession.thread_id == tid)
+        )
+        session = result.scalar_one_or_none()
+        assert session is not None, f"UserSession not found for thread_id={tid}"
+        assert session.turn_count == 1, (
+            f"Expected turn_count=1 for new session, got {session.turn_count}"
+        )
+        assert session.thread_id == tid
+
+        # Verify QAHistory
+        result = await test_db.execute(
+            select(QAHistory).where(QAHistory.thread_id == tid)
+        )
+        qa_record = result.scalar_one_or_none()
+        assert qa_record is not None, f"QAHistory not found for thread_id={tid}"
+        assert qa_record.thread_id == tid
+
+    @real_llm_available
+    @pytest.mark.asyncio
+    async def test_continue_session_increments_turn_count(
+        self, async_client: AsyncClient, create_test_user, test_db
+    ):
+        """Continuing a session increments turn_count from 1 to 2."""
+        _, token = await create_test_user(role="student")
+
+        # First request — create session
+        resp1 = await async_client.post(
+            QA_URL,
+            json={"question": "什么是神经网络？", "use_web_search": False},
+            headers=_auth(token),
+            timeout=120.0,
+        )
+        assert resp1.status_code == 200
+        events1 = parse_sse_events(resp1.text)
+        done1 = assert_sse_event(events1, "done")
+        tid = done1["data"]["thread_id"]
+        assert tid
+
+        # Second request — continue with same thread_id
+        resp2 = await async_client.post(
+            QA_URL,
+            json={
+                "question": "什么是深度学习？",
+                "thread_id": tid,
+                "use_web_search": False,
+            },
+            headers=_auth(token),
+            timeout=120.0,
+        )
+        assert resp2.status_code == 200
+
+        # Verify turn_count incremented
+        result = await test_db.execute(
+            select(UserSession).where(UserSession.thread_id == tid)
+        )
+        session = result.scalar_one()
+        assert session.turn_count == 2, (
+            f"Expected turn_count=2 after continuing session, got {session.turn_count}"
+        )
+
+    @real_llm_available
+    @pytest.mark.asyncio
+    async def test_cross_user_thread_rejected_403(
+        self, async_client: AsyncClient, teacher_token, student_token
+    ):
+        """User B using User A's thread_id returns 403."""
+        # Create session with teacher
+        resp = await async_client.post(
+            QA_URL,
+            json={"question": "什么是机器学习？", "use_web_search": False},
+            headers=_auth(teacher_token),
+            timeout=120.0,
+        )
+        assert resp.status_code == 200
+        events = parse_sse_events(resp.text)
+        done = assert_sse_event(events, "done")
+        tid = done["data"]["thread_id"]
+        assert tid
+
+        # Student tries to reuse teacher's thread
+        resp2 = await async_client.post(
+            QA_URL,
+            json={
+                "question": "hack",
+                "thread_id": tid,
+                "use_web_search": False,
+            },
+            headers=_auth(student_token),
+            timeout=120.0,
+        )
+        assert resp2.status_code == 403, (
+            f"Expected 403 for cross-user thread access, got {resp2.status_code}"
         )

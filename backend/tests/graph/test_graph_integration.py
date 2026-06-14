@@ -15,6 +15,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.graph.builder import build_rag_graph
+from tests.fixtures.graph import compiled_graph, base_state, mock_reranker
 
 
 @pytest.fixture(scope="module")
@@ -345,3 +346,207 @@ class TestGraphMemory:
                                 f"Expected >=4 chat_history entries, "
                                 f"got {len(history)}"
                             )
+
+
+class TestGraphRerankNode:
+    """Rerank node integration tests — exercises cross-encoder reranking in pipeline.
+
+    The graph executes: classify_intent → rag_search → rerank → build_context →
+    generate_answer → review_output → return_answer.
+    All nodes before/after rerank are mocked so only the rerank behavior is tested.
+    """
+
+    _20_RESULTS = [
+        {
+            "chunk_id": i,
+            "content": f"学术内容第{i}段",
+            "document_id": 1,
+            "score": 0.5,
+        }
+        for i in range(20)
+    ]
+    """Twenty dummy chunks returned by the mocked vector_store.search()."""
+
+    @pytest.mark.asyncio
+    async def test_rerank_node_executes_in_pipeline(
+        self, compiled_graph, base_state, mock_reranker
+    ):
+        """Happy path: 20 results → rerank fires → state has reranked=True.
+
+        Verifies:
+            - mock_reranker was called exactly once
+            - result.reranked is True
+            - result.output_count ≤ RERANK_TOP_K (default 5)
+        """
+        mock_cls = _mock_invoke_llm("NORMAL")
+        mock_gen = _mock_invoke_llm("答案是学术内容 [来源1]")
+        mock_rev = _mock_invoke_llm("PASS")
+
+        with patch("app.graph.nodes.classify_intent.invoke_llm", mock_cls):
+            with patch(
+                "app.graph.nodes.rag_search.vector_store"
+            ) as mock_vs:
+                mock_vs.search = AsyncMock(return_value=self._20_RESULTS)
+
+                with patch(
+                    "app.graph.nodes.rag_search.AsyncSessionLocal"
+                ) as mock_db:
+                    mock_db.return_value.__aenter__.return_value = (
+                        _mock_db_session()
+                    )
+
+                    with patch(
+                        "app.graph.nodes.generate_answer.invoke_llm",
+                        mock_gen,
+                    ):
+                        with patch(
+                            "app.graph.nodes.review_output.invoke_llm",
+                            mock_rev,
+                        ):
+                            result = await compiled_graph.ainvoke(
+                                {
+                                    **base_state,
+                                    "question": "什么是机器学习",
+                                    "use_web_search": False,
+                                },
+                                {
+                                    "configurable": {
+                                        "thread_id": "test-rerank-happy"
+                                    }
+                                },
+                            )
+
+        mock_reranker.assert_called_once()
+        assert result.get("reranked") is True, (
+            f"Expected reranked=True, got {result.get('reranked')}"
+        )
+        assert result.get("output_count", 0) <= 5, (
+            f"Expected output_count ≤ 5 (RERANK_TOP_K), "
+            f"got {result.get('output_count')}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_rerank_fallback_on_error(
+        self, compiled_graph, base_state, mock_reranker
+    ):
+        """Fallback: reranker raises → pipeline continues, reranked=False.
+
+        Verifies:
+            - reranked is False (graceful degradation)
+            - output_count == input_count == 20 (original ordering preserved)
+            - answer exists and is_rejected is False (pipeline intact)
+        """
+        mock_reranker.side_effect = Exception("SiliconFlow API unreachable")
+
+        mock_cls = _mock_invoke_llm("NORMAL")
+        mock_gen = _mock_invoke_llm("答案是学术内容 [来源1]")
+        mock_rev = _mock_invoke_llm("PASS")
+
+        with patch("app.graph.nodes.classify_intent.invoke_llm", mock_cls):
+            with patch(
+                "app.graph.nodes.rag_search.vector_store"
+            ) as mock_vs:
+                mock_vs.search = AsyncMock(return_value=self._20_RESULTS)
+
+                with patch(
+                    "app.graph.nodes.rag_search.AsyncSessionLocal"
+                ) as mock_db:
+                    mock_db.return_value.__aenter__.return_value = (
+                        _mock_db_session()
+                    )
+
+                    with patch(
+                        "app.graph.nodes.generate_answer.invoke_llm",
+                        mock_gen,
+                    ):
+                        with patch(
+                            "app.graph.nodes.review_output.invoke_llm",
+                            mock_rev,
+                        ):
+                            result = await compiled_graph.ainvoke(
+                                {
+                                    **base_state,
+                                    "question": "什么是机器学习",
+                                    "use_web_search": False,
+                                },
+                                {
+                                    "configurable": {
+                                        "thread_id": "test-rerank-fallback"
+                                    }
+                                },
+                            )
+
+        assert result.get("reranked") is False, (
+            f"Expected reranked=False on exception, "
+            f"got {result.get('reranked')}"
+        )
+        assert result.get("output_count") == 20, (
+            f"Expected output_count=20 (fallback preserves all), "
+            f"got {result.get('output_count')}"
+        )
+        # Pipeline survived — answer generated, not rejected
+        assert "answer" in result, "Expected answer in result"
+        assert result.get("is_rejected") is False, (
+            "Expected is_rejected=False (pipeline continued after rerank)"
+        )
+        # All 20 results present in original order
+        internal_results = result.get("internal_results", [])
+        assert len(internal_results) == 20, (
+            f"Expected 20 internal_results, got {len(internal_results)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_rerank_top_n_correct(
+        self, compiled_graph, base_state, mock_reranker
+    ):
+        """Top-N: 20 candidates → rerank with RERANK_TOP_K=5 → output_count=5.
+
+        Verifies:
+            - output_count == 5 exactly
+            - reranked is True
+        """
+        mock_cls = _mock_invoke_llm("NORMAL")
+        mock_gen = _mock_invoke_llm("答案是学术内容 [来源1]")
+        mock_rev = _mock_invoke_llm("PASS")
+
+        with patch("app.graph.nodes.classify_intent.invoke_llm", mock_cls):
+            with patch(
+                "app.graph.nodes.rag_search.vector_store"
+            ) as mock_vs:
+                mock_vs.search = AsyncMock(return_value=self._20_RESULTS)
+
+                with patch(
+                    "app.graph.nodes.rag_search.AsyncSessionLocal"
+                ) as mock_db:
+                    mock_db.return_value.__aenter__.return_value = (
+                        _mock_db_session()
+                    )
+
+                    with patch(
+                        "app.graph.nodes.generate_answer.invoke_llm",
+                        mock_gen,
+                    ):
+                        with patch(
+                            "app.graph.nodes.review_output.invoke_llm",
+                            mock_rev,
+                        ):
+                            result = await compiled_graph.ainvoke(
+                                {
+                                    **base_state,
+                                    "question": "什么是机器学习",
+                                    "use_web_search": False,
+                                },
+                                {
+                                    "configurable": {
+                                        "thread_id": "test-rerank-topn"
+                                    }
+                                },
+                            )
+
+        assert result.get("output_count") == 5, (
+            f"Expected output_count=5 (RERANK_TOP_K), "
+            f"got {result.get('output_count')}"
+        )
+        assert result.get("reranked") is True, (
+            f"Expected reranked=True, got {result.get('reranked')}"
+        )

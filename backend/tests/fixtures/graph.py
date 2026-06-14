@@ -109,6 +109,9 @@ def base_state() -> dict:
         "internal_results": [],
         "document_titles": {},
         "has_internal_results": False,
+        "reranked": False,
+        "input_count": 0,
+        "output_count": 0,
         "context": "",
         "sources": [],
         "search_mode": "internal",
@@ -120,3 +123,20 @@ def base_state() -> dict:
         "rejection_reason": "",
         "rejection_category": "",
     }
+
+
+@pytest_asyncio.fixture
+def mock_reranker():
+    """Mock reranker.rerank to return identity ordering with descending relevance scores.
+
+    By default returns documents in their original order with scores
+    descending from 1.0 (1.0, 0.9, 0.8, ...). Tests can override
+    side_effect for custom behavior.
+    """
+    with patch("app.services.reranker.reranker.rerank") as mock:
+        async def fake_rerank(query, documents, top_n=None):
+            n = min(top_n or 5, len(documents))
+            return [{"index": i, "relevance_score": 1.0 - i * 0.1} for i in range(n)]
+
+        mock.side_effect = fake_rerank
+        yield mock

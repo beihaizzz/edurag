@@ -86,6 +86,16 @@ async def chunk_text(
             char_count=len(raw),
             metadata=dict(metadata),  # shallow copy so mutations don't bleed
         )
+        # Enrich metadata with source context and chunk position info
+        if metadata:
+            chunk.metadata.update(
+                {
+                    "source_type": metadata.get("source_type", "document"),
+                    "parent_title": metadata.get("parent_title", ""),
+                    "chunk_index": idx,
+                    "total_chunks": len(raw_chunks),
+                }
+            )
         chunks.append(chunk)
 
     logger.debug(

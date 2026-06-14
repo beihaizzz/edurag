@@ -11,6 +11,9 @@ class RAGState(TypedDict, total=False):
     internal_results: list[dict]
     document_titles: dict[int, str]    # 文档标题映射 {doc_id: title}
     has_internal_results: bool
+    reranked: bool                       # whether cross-encoder reranker was applied
+    input_count: int                     # number of chunks before reranking
+    output_count: int                    # number of chunks after reranking
     context: str
     sources: list[dict]
     search_mode: str                   # "internal" | "web"

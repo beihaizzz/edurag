@@ -13,8 +13,8 @@ def route_after_classify(state: RAGState) -> str:
     return "reject"
 
 
-def route_after_rag_search(state: RAGState) -> str:
-    """After RAG search: route to build_context, web_search, or reject."""
+def route_after_rerank(state: RAGState) -> str:
+    """After rerank: route to build_context, web_search, or reject."""
     has_results = state.get("has_internal_results", False)
     use_web = state.get("use_web_search", False)
 

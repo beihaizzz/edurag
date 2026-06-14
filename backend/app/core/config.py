@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     RAG_CHUNK_SIZE: int = 800
     RAG_CHUNK_OVERLAP: int = 150
 
+    # ── Reranker (SiliconFlow bge-reranker-v2-m3) ──
+    RERANK_ENABLED: bool = True
+    RERANK_FETCH_K: int = 20
+    RERANK_TOP_K: int = 5
+    RERANKER_TIMEOUT: float = 10.0
+    RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
+
     # ── 安全 ─────────────────────────────────
     PII_DETECTION_ENABLED: bool = True
     PROMPT_INJECTION_DETECTION_ENABLED: bool = True

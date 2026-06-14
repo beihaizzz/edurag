@@ -41,21 +41,27 @@ async def rag_search(state: RAGState) -> dict:
     question = state.get("question", "")
     course_id = state.get("course_id")
 
+    # Use different fetch size depending on whether reranker follows
+    fetch_k = settings.RERANK_FETCH_K if settings.RERANK_ENABLED else settings.RAG_TOP_K
+
     try:
         results = await vector_store.search(
             query=question,
-            top_k=settings.RAG_TOP_K,
+            top_k=fetch_k,
             where_filter={"course_id": course_id} if course_id else None,
         )
     except Exception:
         logger.exception("Vector search failed")
         return {"internal_results": [], "has_internal_results": False}
 
-    # Apply similarity threshold filter
-    filtered = [
-        r for r in results
-        if r.get("score", 0) >= settings.RAG_SIMILARITY_THRESHOLD
-    ]
+    # Skip threshold filtering on rerank path — reranker handles relevance
+    if settings.RERANK_ENABLED:
+        filtered = results
+    else:
+        filtered = [
+            r for r in results
+            if r.get("score", 0) >= settings.RAG_SIMILARITY_THRESHOLD
+        ]
 
     has_results = len(filtered) > 0
     logger.info("RAG search: %d raw → %d filtered (threshold=%.2f)", len(results), len(filtered), settings.RAG_SIMILARITY_THRESHOLD)

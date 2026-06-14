@@ -71,7 +71,8 @@ class TestRagSearch:
     @pytest.mark.asyncio
     async def test_search_returns_results(self):
         """Vector search should return filtered results above threshold"""
-        with patch("app.graph.nodes.rag_search.vector_store") as mock_vs:
+        with patch("app.graph.nodes.rag_search.settings.RERANK_ENABLED", False), \
+             patch("app.graph.nodes.rag_search.vector_store") as mock_vs:
             mock_vs.search = AsyncMock(return_value=[
                 {"chunk_id": 1, "document_id": 1, "content": "test", "score": 0.85},
                 {"chunk_id": 2, "document_id": 1, "content": "test2", "score": 0.30},

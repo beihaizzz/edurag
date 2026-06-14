@@ -174,24 +174,26 @@ class TestPath3NoResults:
     @pytest.mark.asyncio
     async def test_no_results_returns_reject(self, compiled_graph):
         """Obscure question with no internal matches should be rejected."""
-        state = {
-            "question": "量子计算与古生物学的交叉研究",
-            "chat_history": [],
-            "course_id": None,
-            "use_web_search": False,
-        }
-        events = [
-            e
-            async for e in compiled_graph.astream(
-                state,
-                {"configurable": {"thread_id": "p3-test"}},
-                stream_mode="updates",
-            )
-        ]
+        with patch("app.graph.nodes.rag_search.settings.RERANK_ENABLED", False):
+            state = {
+                "question": "量子计算与古生物学的交叉研究",
+                "chat_history": [],
+                "course_id": None,
+                "use_web_search": False,
+            }
+            events = [
+                e
+                async for e in compiled_graph.astream(
+                    state,
+                    {"configurable": {"thread_id": "p3-test"}},
+                    stream_mode="updates",
+                )
+            ]
         names = [k for e in events for k in e]
 
         assert "classify_intent" in names
         assert "rag_search" in names
+        assert "rerank" in names
         assert "reject" in names
         assert "return_answer" not in names
 
@@ -234,6 +236,8 @@ class TestPath4WebFallback:
         ]
 
         with patch(
+            "app.graph.nodes.rag_search.settings.RERANK_ENABLED", False
+        ), patch(
             "app.graph.nodes.web_search.search_tavily",
             AsyncMock(return_value=mock_web_results),
         ):
@@ -255,6 +259,7 @@ class TestPath4WebFallback:
 
             assert "classify_intent" in names
             assert "rag_search" in names
+            assert "rerank" in names
             assert "web_search" in names
             assert "generate_answer" in names
             assert "review_output" in names
