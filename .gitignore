@@ -61,3 +61,10 @@ data/
 # Runtime generated
 .langgraph_api/
 .claude/
+
+# Course materials (binary files — use Git LFS or cloud storage)
+docs/**/*.pdf
+docs/**/*.ppt
+docs/**/*.pptx
+docs/**/*.doc
+docs/**/*.docx
