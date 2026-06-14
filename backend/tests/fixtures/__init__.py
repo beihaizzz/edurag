@@ -36,6 +36,8 @@ import uuid
 
 import pytest_asyncio
 
+from app.core.database import AsyncSessionLocal
+
 from tests.fixtures.auth import (  # noqa: F401
     admin_token,
     auth_headers,
@@ -67,11 +69,14 @@ from tests.fixtures.graph import (  # noqa: F401
 
 
 @pytest_asyncio.fixture
-async def create_test_user(test_db):
+async def create_test_user():
     """Factory fixture: create a test user with a valid JWT access token.
 
-    Creates a real User row in the test database and returns both
-    the User ORM object and a signed JWT access_token.
+    Creates a real User row (committed to the database via an independent
+    session) and returns both the User ORM object and a signed JWT access_token.
+
+    Uses its own ``AsyncSessionLocal()`` session so it does not contend
+    with ``async_client``'s ``test_db`` session.
 
     Args:
         role: One of "student" (default), "teacher", "admin"
@@ -103,9 +108,10 @@ async def create_test_user(test_db):
             real_name=f"Test {role}",
             email=f"{username}@test.local",
         )
-        test_db.add(user)
-        await test_db.flush()
-        await test_db.refresh(user)
+        async with AsyncSessionLocal() as session:
+            session.add(user)
+            await session.flush()
+            await session.commit()
 
         token = create_access_token({"sub": str(user.id)})
         return user, token

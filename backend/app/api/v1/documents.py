@@ -351,7 +351,7 @@ async def update_document(
         setattr(doc, field, value)
 
     await db.commit()
-    await db.refresh(doc)
+    await db.refresh(doc, attribute_names=["course", "uploader"])
 
     return APIResponse(
         message="更新成功",
@@ -429,7 +429,7 @@ async def approve_document(
     doc.auditor_id = user.id
 
     await db.commit()
-    await db.refresh(doc)
+    await db.refresh(doc, attribute_names=["course", "uploader"])
 
     return APIResponse(
         message="审核完成",

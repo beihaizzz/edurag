@@ -24,7 +24,7 @@
 |------|------|------|
 | 第 1 周 — 准备阶段 | 06-06 ~ 06-12 | ✅ 完成 |
 | 第 2 周 — 基础模块实现 | 06-13 ~ 06-19 | ✅ 完成（提前完成，实际 06-10） |
-| 第 3 周 — 核心功能 + 前沿增强 | 06-20 ~ 06-26 | 🔲 未开始 |
+| 第 3 周 — 核心功能 + 前沿增强 | 06-20 ~ 06-26 | ✅ 完成（提前完成，实际 06-12） |
 | 第 4 周 — 整合、测试、文档与答辩准备 | 06-27 ~ 07-03 | 🔲 未开始 |
 
 ---
@@ -69,6 +69,8 @@
 | 2026-06-12 | 🔧 架构改进：`generate_answer` 从自由文本改为 **JSON Mode 结构化输出**（`response_format={"type": "json_object"}`），强制要求 `{"answer": "..[来源N]..", "citations": [1]}` 格式，消除引用丢失的不确定性 |
 | 2026-06-12 | ⚠️ 发现关键约束：`deepseek-v4-flash` 为推理模型（thinking mode），设置显式 `max_tokens` 会导致全部 token 被 thinking 消耗、可见输出为空。所有 LLM 调用点移除 `max_tokens` 显式限制 |
 | 2026-06-12 | ✅ RAG 问答端到端全链路调通：上传 → 处理 → 审核 → 向量检索 → JSON 生成（含引用）→ 审核 PASS → SSE 流式返回 |
+| 2026-06-12 | ✅ 第 3 周核心功能全部完成：LangGraph 12-node pipeline、SSE 流式输出、三层安全防护（L0/L1/L3）、混合检索、JSON 模式引用、LangGraph checkpointer 持久化 + Tavily web search |
+| 2026-06-14 | ✅ 修复 QAHistory 写入管道（qa.py 新增 QAHistory 持久化），新增 T3.12 教师数据洞察 API（GET /admin/qa/stats）+ T3.13 系统日志 API（GET /admin/logs） |
 
 ---
 
@@ -91,6 +93,23 @@
 | 13 | 管理端首页接入真实数据 | ✅ | 6 张统计卡 + 动态待办 |
 | 14 | 跨组件刷新机制 | ✅ | refresh.ts 事件总线 |
 | 15 | TypeScript + Vite 编译零错误 | ✅ | 2026-06-10 验证通过 |
+
+---
+
+## 第 3 周自查清单
+
+| # | 检查项 | 状态 | 备注 |
+|:---:|------|:---:|------|
+| 1 | 文档审核通过 → 自动解析→切分→向量化全流程 | ✅ | BackgroundTask 完整执行 |
+| 2 | 语义检索返回 Top-K 合理片段 | ✅ | ChromaDB cosine similarity |
+| 3 | RAG 问答答案基于上下文生成，含来源引用 | ✅ | JSON mode citations [1][2] |
+| 4 | SSE 流式响应逐字展示 | ✅ | StreamingResponse |
+| 5 | 提示注入被正确拦截 | ✅ | 三层防护 + 多语言 |
+| 6 | 无关问题返回拒答 (is_rejected=true) | ✅ | 含拒答提示 |
+| 7 | 教师可查看课程高频问题 Top-N | ✅ | GET /admin/qa/stats |
+| 8 | 管理仪表盘数据准确 | ✅ | GET /admin/dashboard |
+| 9 | 操作日志可查询 | ✅ | GET /admin/audit-logs + /admin/logs |
+| 10 | 问答历史持久化 | ✅ | QAHistory + LangGraph checkpointer |
 
 ---
 

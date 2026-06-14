@@ -1,5 +1,7 @@
 """反馈模块 Pydantic 模型"""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -16,6 +18,6 @@ class FeedbackItem(BaseModel):
     qa_id: int
     type: str
     comment: str
-    created_at: str | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}

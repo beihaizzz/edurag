@@ -4,6 +4,10 @@ Provides ready-to-use JWT tokens and auth headers for integration tests.
 All token-returning fixtures create real User records in the transactional
 test database (except ``expired_token``, which is a pure JWT construction).
 
+NOTE: Usernames include a random suffix to avoid unique-constraint conflicts
+      when API handlers call ``db.commit()``, which persists fixture-created
+      users beyond the test_db rollback boundary.
+
 Fixtures:
     student_token         - JWT access_token for a student user
     teacher_token         - JWT access_token for a teacher user
@@ -14,6 +18,7 @@ Fixtures:
     disabled_user_token   - JWT access_token for a disabled (is_active=False) user
 """
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -21,13 +26,18 @@ import pytest_asyncio
 from jose import jwt
 
 from app.core.config import settings
+from app.core.database import AsyncSessionLocal
 
 
 # ── Convenience helpers ────────────────────────────────────────────
 
 
-async def _create_user_and_token(test_db, *, role, username, password="pass123", is_active=True):
-    """Create a real User row and return a JWT access_token string."""
+async def _create_user_and_token(*, role, username, password="pass123", is_active=True):
+    """Create a real User row (committed to DB) and return a JWT access_token string.
+
+    Uses an independent database session that commits the user, so the
+    record is visible to ``async_client``'s ``test_db`` session.
+    """
     from app.core.security import create_access_token, hash_password
     from app.models.user import User
 
@@ -39,8 +49,10 @@ async def _create_user_and_token(test_db, *, role, username, password="pass123",
         email=f"{username}@test.local",
         is_active=is_active,
     )
-    test_db.add(user)
-    await test_db.flush()
+    async with AsyncSessionLocal() as session:
+        session.add(user)
+        await session.flush()
+        await session.commit()
 
     return create_access_token({"sub": str(user.id), "role": user.role})
 
@@ -48,8 +60,13 @@ async def _create_user_and_token(test_db, *, role, username, password="pass123",
 # ── Token fixtures ─────────────────────────────────────────────────
 
 
+def _unique_username(prefix: str) -> str:
+    """Generate a unique username with a random suffix."""
+    return f"{prefix}_{uuid.uuid4().hex[:8]}"
+
+
 @pytest_asyncio.fixture
-async def student_token(test_db):
+async def student_token():
     """JWT access_token for a student user (real DB record).
 
     Usage::
@@ -58,23 +75,29 @@ async def student_token(test_db):
             headers = {"Authorization": f"Bearer {student_token}"}
             ...
     """
-    return await _create_user_and_token(test_db, role="student", username="test_student")
+    return await _create_user_and_token(
+        role="student", username=_unique_username("test_student")
+    )
 
 
 @pytest_asyncio.fixture
-async def teacher_token(test_db):
+async def teacher_token():
     """JWT access_token for a teacher user (real DB record)."""
-    return await _create_user_and_token(test_db, role="teacher", username="test_teacher")
+    return await _create_user_and_token(
+        role="teacher", username=_unique_username("test_teacher")
+    )
 
 
 @pytest_asyncio.fixture
-async def admin_token(test_db):
+async def admin_token():
     """JWT access_token for an admin user (real DB record)."""
-    return await _create_user_and_token(test_db, role="admin", username="test_admin")
+    return await _create_user_and_token(
+        role="admin", username=_unique_username("test_admin")
+    )
 
 
 @pytest_asyncio.fixture
-async def disabled_user_token(test_db):
+async def disabled_user_token():
     """JWT access_token for a user with ``is_active=False``.
 
     The token itself is structurally valid — the *user record*
@@ -82,7 +105,9 @@ async def disabled_user_token(test_db):
     will raise HTTP 403 when the dependency is used.
     """
     return await _create_user_and_token(
-        test_db, role="student", username="test_disabled", is_active=False
+        role="student",
+        username=_unique_username("test_disabled"),
+        is_active=False,
     )
 
 
@@ -127,22 +152,27 @@ def expired_token():
 
 
 @pytest_asyncio.fixture
-async def refresh_token_str(test_db):
+async def refresh_token_str():
     """JWT refresh_token string for a student user (real DB record).
 
     The token has ``type: "refresh"`` and a 7-day expiry.
+    Uses an independent session that commits the user so it is
+    visible to the ``async_client``'s ``test_db`` session.
     """
     from app.core.security import create_refresh_token, hash_password
     from app.models.user import User
 
+    username = _unique_username("test_student2")
     user = User(
-        username="test_student2",
+        username=username,
         password_hash=hash_password("pass123"),
         role="student",
         real_name="Test student",
-        email="test_student2@test.local",
+        email=f"{username}@test.local",
     )
-    test_db.add(user)
-    await test_db.flush()
+    async with AsyncSessionLocal() as session:
+        session.add(user)
+        await session.flush()
+        await session.commit()
 
     return create_refresh_token({"sub": str(user.id), "role": user.role})

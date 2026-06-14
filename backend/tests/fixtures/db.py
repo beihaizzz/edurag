@@ -26,7 +26,10 @@ async def test_db():
     async with AsyncSessionLocal() as session:
         await session.begin()
         yield session
-        await session.rollback()
+        try:
+            await session.rollback()
+        finally:
+            await session.close()
 
 
 @pytest_asyncio.fixture

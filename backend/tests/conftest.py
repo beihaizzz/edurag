@@ -92,6 +92,25 @@ from main import app  # noqa: E402
 from tests.fixtures.db import init_test_data, reset_db, test_db  # noqa: E402
 from tests.fixtures.client import async_client  # noqa: E402
 from tests.fixtures import create_test_user  # noqa: E402
+from tests.fixtures.auth import (  # noqa: E402
+    admin_token,
+    auth_headers,
+    disabled_user_token,
+    expired_token,
+    refresh_token_str,
+    student_token,
+    teacher_token,
+)
+from tests.fixtures.documents import (  # noqa: E402
+    approved_document,
+    processed_document,
+    sample_docx_file,
+    sample_large_file,
+    sample_pdf_file,
+    sample_txt_file,
+    sample_unsupported_file,
+    uploaded_document,
+)
 
 # ══════════════════════════════════════════════════════════════════
 # Mock fixtures (kept for backward compatibility)

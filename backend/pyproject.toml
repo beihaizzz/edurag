@@ -50,9 +50,12 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 markers = [
     "env_check: Environment connectivity validation tests",
+    "e2e: End-to-end integration tests covering complete user journeys",
 ]
 
 [tool.uv]

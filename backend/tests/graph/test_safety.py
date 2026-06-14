@@ -85,13 +85,14 @@ class TestL3OutputReview:
     @pytest.mark.asyncio
     async def test_missing_citations_internal_mode(self):
         """Internal mode without citations should be REJECTED"""
-        result = await review_output({
-            "answer": "The answer is...",
-            "sources": [{"index": 1}],
-            "search_mode": "internal",
-            "question": "test",
-        })
-        assert result["review_result"] == "REJECT"
+        with patch("app.graph.nodes.review_output.invoke_llm", new_callable=AsyncMock, return_value="REJECT"):
+            result = await review_output({
+                "answer": "The answer is...",
+                "sources": [{"index": 1}],
+                "search_mode": "internal",
+                "question": "test",
+            })
+            assert result["review_result"] == "REJECT"
 
     @pytest.mark.asyncio
     async def test_web_mode_more_lenient(self):

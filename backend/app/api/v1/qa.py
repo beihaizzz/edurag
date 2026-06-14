@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -16,7 +17,7 @@ from app.core.database import get_db
 from app.deps import get_current_user
 from app.graph.builder import build_rag_graph
 from app.graph.state import RAGState
-from app.models import User, UserSession
+from app.models import QAHistory, User, UserSession
 from app.schemas.common import APIResponse, PaginatedData
 from app.schemas.search import QaCreate
 
@@ -76,6 +77,7 @@ async def ask_question(
             config = {"configurable": {"thread_id": thread_id}}
 
             last_node = ""
+            start_time = time.perf_counter()
 
             async for event in graph.astream(
                 initial_state,
@@ -120,12 +122,30 @@ async def ask_question(
             state_snapshot = await graph.aget_state(config)
             state_values = state_snapshot.values if state_snapshot else {}
 
+            # ── Persist to qa_history ──
+            end_time = time.perf_counter()
+            latency_ms = int((end_time - start_time) * 1000)
+
+            qa_record = QAHistory(
+                user_id=user.id,
+                course_id=course_id,
+                question=question,
+                answer=state_values.get("answer", ""),
+                sources=state_values.get("sources", []),
+                is_rejected=state_values.get("is_rejected", False),
+                latency_ms=latency_ms,
+            )
+            db.add(qa_record)
+            await db.commit()
+            await db.refresh(qa_record)
+
             # Send done event
             done_data = {
                 "answer": state_values.get("answer", ""),
                 "sources": state_values.get("sources", []),
                 "is_rejected": state_values.get("is_rejected", False),
                 "rejection_reason": state_values.get("rejection_reason", ""),
+                "id": qa_record.id,
                 "thread_id": thread_id,
             }
             yield f"event: done\ndata: {json.dumps(done_data, default=str)}\n\n"

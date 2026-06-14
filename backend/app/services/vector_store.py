@@ -51,12 +51,19 @@ class VectorStoreService:
         ids = [str(c["chunk_id"]) for c in chunks]
 
         # Build flat, ChromaDB-compatible metadata
+        # ChromaDB only accepts str, int, float, bool — filter out None and other types
         metadatas: list[dict[str, Any]] = []
         for c in chunks:
             meta: dict[str, Any] = {"document_id": c["document_id"]}
             extra = c.get("metadata")
             if isinstance(extra, dict):
                 meta.update(extra)
+            # Remove keys with None or unsupported values (ChromaDB MetadataValue)
+            meta = {
+                k: v
+                for k, v in meta.items()
+                if v is not None and isinstance(v, (str, int, float, bool))
+            }
             metadatas.append(meta)
 
         emb = get_embedding()
