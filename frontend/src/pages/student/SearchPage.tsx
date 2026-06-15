@@ -63,9 +63,9 @@ export default function SearchPage() {
     try {
       const params: Record<string, string | number> = { q, mode, page: p, page_size: pageSize }
       if (courseId) params.course_id = Number(courseId)
-      const r = await api.get<APIResponse<PaginatedResponse<ResultItem>>>('/search', { params })
+      const r = await api.get<APIResponse<{ results: ResultItem[]; total: number; page: number; total_pages: number }>>('/search', { params })
       if (r.data.code === 0 && r.data.data) {
-        setResults(r.data.data.items ?? [])
+        setResults(r.data.data.results ?? [])
         setTotal(r.data.data.total)
         setPage(r.data.data.page)
         setTotalPages(r.data.data.total_pages)
