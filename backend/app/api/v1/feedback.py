@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.deps import get_current_user
-from app.models import Feedback, QAHistory, User
+from app.models import Feedback, User, UserSession
 from app.schemas.common import APIResponse, PaginatedData
 from app.schemas.feedback import FeedbackCreate, FeedbackItem
 
@@ -26,16 +26,16 @@ async def create_feedback(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """提交反馈（所有登录用户），同一用户对同一 QA 只能提交一次"""
-    # 验证 QA 是否存在
+    """提交反馈（所有登录用户），同一用户对同一会话只能提交一次"""
+    # 验证 Session 是否存在
     result = await db.execute(
-        select(QAHistory).where(QAHistory.id == body.qa_id)
+        select(UserSession).where(UserSession.id == body.qa_id)
     )
-    qa = result.scalar_one_or_none()
-    if qa is None:
+    session = result.scalar_one_or_none()
+    if session is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="QA 记录不存在",
+            detail="会话不存在",
         )
 
     # 创建反馈
@@ -54,7 +54,7 @@ async def create_feedback(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="您已对该 QA 提交过反馈，不能重复提交",
+            detail="您已对该会话提交过反馈，不能重复提交",
         )
 
     return APIResponse(

@@ -1,6 +1,8 @@
 """反馈模块 Pydantic 模型"""
 
-from pydantic import BaseModel, Field
+from datetime import datetime
+
+from pydantic import BaseModel, Field, field_serializer
 
 
 class FeedbackCreate(BaseModel):
@@ -15,7 +17,11 @@ class FeedbackItem(BaseModel):
     id: int
     qa_id: int
     type: str
-    comment: str
-    created_at: str | None = None
+    comment: str | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, v: datetime | None) -> str | None:
+        return v.isoformat() if v else None

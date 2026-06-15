@@ -1,42 +1,29 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../services/api'
 import type { APIResponse, PaginatedResponse } from '../../types/api'
 
-interface CourseItem { id: number; name: string }
-interface QASourceItem { chunk_id: number; document_id: number; title: string; score: number }
-interface QAItem { id: number; question: string; answer: string; sources: QASourceItem[] | null; is_rejected: boolean; latency_ms: number; course_id: number | null; created_at: string }
-
-const css = `
-  @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-  .qa-anim { animation: fadeInUp 0.4s ease-out both; }
-  .qa-typing-dot { animation: pulse 1.2s ease-in-out infinite; }
-  .qa-typing-dot:nth-child(2) { animation-delay: 0.2s; }
-  .qa-typing-dot:nth-child(3) { animation-delay: 0.4s; }
-  .qa-snippet { position: relative; }
-  .qa-snippet::before {
-    content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-    width: 3px; background: #6366F1; border-radius: 3px 0 0 3px;
-  }
-`
-
-function formatTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 60) return mins <= 0 ? '刚刚' : `${mins} 分钟前`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs} 小时前`
-  const days = Math.floor(hrs / 24)
-  if (days < 7) return `${days} 天前`
-  return `${Math.floor(days / 7)} 周前`
+interface SessionItem {
+  id: number; thread_id: string; title: string; turn_count: number
+  course_id: number | null; created_at: string | null; updated_at: string | null
 }
 
-function renderMarkdown(text: string) {
-  // Simple markdown renderer for common patterns
+interface SourceItem { chunk_id: number; document_id: number; title: string; score: number }
+interface ChatMessage { role: 'user' | 'assistant'; content: string; sources?: SourceItem[] | null; isRejected?: boolean; rejectionReason?: string }
+
+interface QAResponse {
+  thread_id: string; session_id: number; question: string; answer: string
+  sources: { chunk_id: number; document_id: number; title: string; score: number }[] | null
+  is_rejected: boolean; turn_count: number; course_id: number | null; created_at: string
+}
+
+interface SessionDetail {
+  id: number; thread_id: string; title: string; turn_count: number
+  course_id: number | null; chat_history: ChatMessage[]
+  created_at: string | null; updated_at: string | null
+}
+
+function renderMarkdown(text: string): React.ReactNode[] {
   const lines = text.split('\n')
   const result: React.ReactNode[] = []
   let inList = false; let listItems: React.ReactNode[] = []
@@ -49,7 +36,6 @@ function renderMarkdown(text: string) {
   }
 
   for (const line of lines) {
-    // Headings
     if (/^### (.+)/.test(line)) {
       flushList(); inList = false
       result.push(<h3 key={result.length} style={{ fontSize: 15, fontWeight: 600, color: '#1e293b', margin: '16px 0 8px' }}>{line.replace(/^### /, '')}</h3>)
@@ -58,9 +44,7 @@ function renderMarkdown(text: string) {
       result.push(<h2 key={result.length} style={{ fontSize: 17, fontWeight: 700, color: '#0f172a', margin: '16px 0 8px' }}>{line.replace(/^## /, '')}</h2>)
     } else if (/^- (.+)/.test(line)) {
       inList = true
-      const content = line.replace(/^- /, '')
-      const bold = content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      listItems.push(<li key={listItems.length} style={{ marginBottom: 4 }} dangerouslySetInnerHTML={{ __html: bold }} />)
+      listItems.push(<li key={listItems.length} style={{ marginBottom: 4 }}>{renderInline(line.replace(/^- /, ''))}</li>)
     } else if (line.trim() === '') {
       if (inList) { flushList(); inList = false }
     } else if (/^> (.+)/.test(line)) {
@@ -73,22 +57,41 @@ function renderMarkdown(text: string) {
           {line.replace(/^> /, '')}
         </blockquote>
       )
-    } else if (/^\d+\. (.+)/.test(line)) {
+    } else if (/^\d+\.\s(.+)/.test(line)) {
       flushList(); inList = false
-      const m = line.match(/^(\d+)\. (.+)/)!
+      const m = line.match(/^(\d+)\.\s(.+)/)!
       result.push(
         <div key={result.length} style={{ display: 'flex', gap: 10, marginBottom: 4 }}>
           <span style={{ width: 20, height: 20, borderRadius: '50%', background: '#EEF2FF', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{m[1]}</span>
-          <span style={{ fontSize: 14, color: '#334155' }} dangerouslySetInnerHTML={{ __html: m[2].replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />
+          <span style={{ fontSize: 14, color: '#334155' }}>{renderInline(m[2])}</span>
         </div>
       )
     } else if (line.trim()) {
       flushList(); inList = false
-      result.push(<p key={result.length} style={{ margin: '4px 0', fontSize: 14, color: '#334155', lineHeight: 1.7 }}>{line}</p>)
+      result.push(<p key={result.length} style={{ margin: '4px 0', fontSize: 14, color: '#334155', lineHeight: 1.7 }}>{renderInline(line)}</p>)
     }
   }
   flushList()
   return result
+}
+
+function renderInline(text: string): React.ReactNode {
+  // Split by **bold** and [来源N] patterns
+  const parts = text.split(/(\*\*[^*]+\*\*|\[来源\d+\])/g)
+  return parts.map((p, i) => {
+    if (p.startsWith('**') && p.endsWith('**')) {
+      return <strong key={i}>{p.slice(2, -2)}</strong>
+    }
+    if (/^\[来源\d+\]$/.test(p)) {
+      return (
+        <span key={i} style={{
+          fontSize: 11, padding: '1px 6px', borderRadius: 4, fontWeight: 500,
+          background: '#EEF2FF', color: '#4F46E5', marginLeft: 4,
+        }}>{p}</span>
+      )
+    }
+    return p
+  })
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -98,267 +101,578 @@ const SUGGESTED_QUESTIONS = [
   '大学物理电磁学部分的核心概念是什么？',
 ]
 
-export default function QAPage() {
-  const [searchParams] = useSearchParams()
-  const [question, setQuestion] = useState(searchParams.get('question') || '')
-  const [courseId, setCourseId] = useState('')
-  const [asking, setAsking] = useState(false)
-  const [currentQA, setCurrentQA] = useState<QAItem | null>(null)
-  const [history, setHistory] = useState<QAItem[]>([])
-  const [historyPage, setHistoryPage] = useState(1)
-  const [historyTotal, setHistoryTotal] = useState(0)
-  const [courses, setCourses] = useState<CourseItem[]>([])
-  const endRef = useRef<HTMLDivElement>(null)
+const css = `
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .qa-fade { animation: fadeInUp 0.3s ease-out both; }
+  .qa-dot { animation: pulse 1.2s ease-in-out infinite; }
+  .qa-dot:nth-child(2) { animation-delay: 0.2s; }
+  .qa-dot:nth-child(3) { animation-delay: 0.4s; }
+  .qa-scrollbar::-webkit-scrollbar { width: 4px; }
+  .qa-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+  .qa-session-item .qa-delete-btn { opacity: 0; }
+  .qa-session-item:hover .qa-delete-btn { opacity: 1; }
+`
 
-  useEffect(() => {
-    api.get<APIResponse<PaginatedResponse<CourseItem>>>('/courses', { params: { page: 1, page_size: 100 } })
-      .then((r) => { if (r.data.code === 0 && r.data.data) setCourses(r.data.data.items ?? []) })
-      .catch(() => {})
+export default function QAPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [sessions, setSessions] = useState<SessionItem[]>([])
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [asking, setAsking] = useState(false)
+  const [loadingSession, setLoadingSession] = useState(false)
+  const [previewSrc, setPreviewSrc] = useState<{ docId: number; title: string; score: number } | null>(null)
+  const [previewFileUrl, setPreviewFileUrl] = useState<string | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const [lastQuestion, setLastQuestion] = useState('') // for regenerate
+  const [feedbackModal, setFeedbackModal] = useState(false)
+  const [feedbackType, setFeedbackType] = useState('')
+  const [feedbackComment, setFeedbackComment] = useState('')
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Load sessions
+  const loadSessions = useCallback(async () => {
+    try {
+      const r = await api.get<APIResponse<PaginatedResponse<SessionItem>>>('/qa', { params: { page: 1, page_size: 50 } })
+      if (r.data.code === 0 && r.data.data) {
+        setSessions(r.data.data.items ?? [])
+      }
+    } catch { /* */ }
   }, [])
 
-  useEffect(() => { loadHistory(1) }, [])
+  useEffect(() => { loadSessions() }, [])
+
+  // Load session detail
+  const loadSession = useCallback(async (sessionId: number) => {
+    setLoadingSession(true)
+    try {
+      const r = await api.get<APIResponse<SessionDetail>>(`/qa/${sessionId}`)
+      if (r.data.code === 0 && r.data.data) {
+        const d = r.data.data
+        setActiveThreadId(d.thread_id)
+        setActiveSessionId(d.id)
+        setMessages(d.chat_history)
+      }
+    } catch { /* */ }
+    finally { setLoadingSession(false) }
+  }, [])
+
+  // Auto-load from URL param
   useEffect(() => {
     const q = searchParams.get('question')
-    if (q) { setQuestion(q); askQuestion(q) }
+    if (q && !activeThreadId) {
+      setInput(q)
+      doAsk(q)
+    }
   }, [])
 
-  const loadHistory = async (p: number) => {
-    try {
-      const r = await api.get<APIResponse<PaginatedResponse<QAItem>>>('/qa', { params: { page: p, page_size: 20 } })
-      if (r.data.code === 0 && r.data.data) {
-        setHistory(r.data.data.items ?? [])
-        setHistoryTotal(r.data.data.total)
-        setHistoryPage(p)
-      }
-    } catch { /* */ }
-  }
+  // Scroll to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, asking])
 
-  const askQuestion = async (q?: string) => {
-    const qq = (q || question).trim()
-    if (!qq || asking) return
+  const doAsk = async (q?: string) => {
+    const question = (q || input).trim()
+    if (!question || asking) return
+
+    const userMsg: ChatMessage = { role: 'user', content: question }
+    setMessages((prev) => [...prev, userMsg])
+    setLastQuestion(question)
+    setInput('')
     setAsking(true)
-    setCurrentQA(null)
+
     try {
-      const body: Record<string, string | number> = { question: qq }
-      if (courseId) body.course_id = Number(courseId)
-      const r = await api.post<APIResponse<QAItem>>('/qa', body)
+      const body: Record<string, string | number> = { question }
+      if (activeThreadId) body.thread_id = activeThreadId
+
+      const r = await api.post<APIResponse<QAResponse>>('/qa', body)
       if (r.data.code === 0 && r.data.data) {
-        setCurrentQA(r.data.data)
-        loadHistory(1)
+        const d = r.data.data
+        const aiMsg: ChatMessage = { role: 'assistant', content: d.answer, sources: d.sources }
+        setMessages((prev) => [...prev, aiMsg])
+
+        if (!activeThreadId) {
+          setActiveThreadId(d.thread_id)
+          setActiveSessionId(d.session_id)
+        }
+
+        loadSessions()
+
+        if (searchParams.get('question')) {
+          setSearchParams({}, { replace: true })
+        }
       }
     } catch { /* */ }
-    finally { setAsking(false); setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 100) }
+    finally { setAsking(false) }
   }
 
-  const courseList = courses.length > 0 ? courses : [
-    { id: 1, name: '大学物理' },{ id: 2, name: '高等数学' },{ id: 3, name: '程序设计' },
-    { id: 4, name: '操作系统' },{ id: 5, name: '数据结构' },{ id: 6, name: '深度学习' },
-    { id: 7, name: '软件工程' },{ id: 8, name: '数字图像处理' },{ id: 9, name: 'Unity开发' },
-  ]
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      doAsk()
+    }
+  }
+
+  const openPreview = async (src: SourceItem) => {
+    setPreviewSrc({ docId: src.document_id, title: src.title, score: src.score })
+    setLoadingPreview(true)
+    setPreviewFileUrl(null)
+    try {
+      const r = await api.get(`/documents/${src.document_id}/file`, { responseType: 'blob' })
+      setPreviewFileUrl(URL.createObjectURL(r.data as Blob))
+    } catch { /* */ }
+    finally { setLoadingPreview(false) }
+  }
+
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+
+  const handleCopy = (text: string, idx: number) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedIdx(idx)
+      setTimeout(() => setCopiedIdx(null), 2000)
+    }).catch(() => {})
+  }
+
+  const handleRegenerate = () => {
+    if (!lastQuestion) return
+    // Remove last AI message and re-ask
+    setMessages((prev) => prev.slice(0, -1))
+    doAsk(lastQuestion)
+  }
+
+  const submitFeedback = async () => {
+    if (!feedbackType || !activeSessionId) return
+    setFeedbackSubmitting(true)
+    try {
+      await api.post('/feedback', { qa_id: activeSessionId, type: feedbackType, comment: feedbackComment })
+      setFeedbackModal(false)
+      setFeedbackType('')
+      setFeedbackComment('')
+    } catch { /* */ }
+    finally { setFeedbackSubmitting(false) }
+  }
+
+  const newChat = () => {
+    setActiveThreadId(null)
+    setActiveSessionId(null)
+    setMessages([])
+    setInput('')
+    setLastQuestion('')
+    setPreviewSrc(null)
+    setPreviewFileUrl(null)
+    inputRef.current?.focus()
+  }
+
+  const deleteSession = async (e: React.MouseEvent, sessionId: number) => {
+    e.stopPropagation()
+    try {
+      await api.delete(`/qa/${sessionId}`)
+    } catch { /* */ }
+    setSessions((prev) => prev.filter((s) => s.id !== sessionId))
+    if (activeSessionId === sessionId) newChat()
+  }
+
+  const formatTime = (iso: string | null) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const now = new Date()
+    const diff = now.getTime() - d.getTime()
+    if (diff < 86400000) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`
+    return d.toLocaleDateString('zh-CN')
+  }
 
   return (
     <>
       <style>{css}</style>
-      <main style={{ maxWidth: 1152, margin: '0 auto', padding: '32px 24px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 24 }}>
-
-          {/* Main */}
-          <div>
-            <div className="qa-anim" style={{ marginBottom: 24 }}>
-              <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>AI 课程问答</h1>
-              <p style={{ fontSize: 14, color: '#64748b', margin: 0 }}>基于课程资料智能问答，AI 回答将引用相关文档片段作为参考</p>
-            </div>
-
-            {/* Input */}
-            <div className="qa-anim" style={{ animationDelay: '0.05s', background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 20, marginBottom: 24 }}>
-              <textarea
-                rows={3} placeholder="输入你的问题，例如：什么是进程调度？操作系统有哪些常见算法？"
-                value={question} onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); askQuestion() } }}
-                style={{ width: '100%', border: 'none', outline: 'none', resize: 'none', fontSize: 14, color: '#0f172a', lineHeight: 1.6, fontFamily: 'inherit' }}
-              />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <select value={courseId} onChange={(e) => setCourseId(e.target.value)}
-                    style={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8, padding: '4px 12px', background: '#fff', color: '#475569', outline: 'none', cursor: 'pointer' }}>
-                    <option value="">全部课程</option>
-                    {courseList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  <span style={{ fontSize: 11, color: '#94a3b8' }}>Ctrl+Enter 发送</span>
-                </div>
-                <button onClick={() => askQuestion()} disabled={asking}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 20px', background: asking ? '#a5b4fc' : '#6366F1', color: '#fff', fontWeight: 600, fontSize: 14, border: 'none', borderRadius: 8, cursor: asking ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
-                  onMouseEnter={(e) => { if (!asking) { e.currentTarget.style.background = '#4F46E5'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(99,102,241,0.35)' } }}
-                  onMouseLeave={(e) => { if (!asking) { e.currentTarget.style.background = '#6366F1'; e.currentTarget.style.boxShadow = 'none' } }}
-                >
-                  <svg width={16} height={16} viewBox="0 0 16 16" fill="none"><path d="M1 15L15 8 1 1v5.5L10 8 1 9.5V15z" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" /></svg>
-                  发送
-                </button>
-              </div>
-            </div>
-
-            {/* QA Display */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              {/* Question bubble */}
-              {currentQA && (
-                <div className="qa-anim" style={{ animationDelay: '0.1s', display: 'flex', justifyContent: 'flex-end' }}>
-                  <div style={{ maxWidth: '85%', background: '#EEF2FF', borderRadius: '16px 16px 4px 16px', padding: '14px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <svg width={16} height={16} viewBox="0 0 16 16" fill="none"><circle cx={8} cy={5.5} r={2.5} stroke="#6366F1" strokeWidth={1.5} /><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="#6366F1" strokeWidth={1.5} strokeLinecap="round" /></svg>
-                      <span style={{ fontSize: 11, fontWeight: 500, color: '#4F46E5' }}>你的问题</span>
-                    </div>
-                    <p style={{ fontSize: 14, color: '#334155', lineHeight: 1.6, margin: 0 }}>{currentQA.question}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* AI Answer Card */}
-              {currentQA && !currentQA.is_rejected && (
-                <div className="qa-anim" style={{ animationDelay: '0.15s', background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                  <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <svg width={20} height={20} viewBox="0 0 20 20" fill="none"><rect x={4} y={5} width={12} height={10} rx={2} stroke="#6366F1" strokeWidth={1.5} /><path d="M8 8h4M8 11h3" stroke="#6366F1" strokeWidth={1.5} strokeLinecap="round" /></svg>
-                      </div>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: '#1e293b' }}>AI 回答</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#f1f5f9', color: '#64748b', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <svg width={12} height={12} viewBox="0 0 16 16" fill="none"><circle cx={8} cy={8} r={6.5} stroke="currentColor" strokeWidth={1.5} /><path d="M8 4.5V8l2.5 2.5" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" /></svg>
-                        {(currentQA.latency_ms / 1000).toFixed(1)}s
-                      </span>
-                      {currentQA.sources && currentQA.sources.length > 0 && (
-                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#EEF2FF', color: '#4F46E5', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <svg width={12} height={12} viewBox="0 0 16 16" fill="none"><path d="M4 4h8v8H4V4zM8 4v8M4 8h8" stroke="currentColor" strokeWidth={1.5} /></svg>
-                          {currentQA.sources.length} 个来源
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div style={{ padding: '20px 20px' }}>
-                    <div style={{ fontSize: 14, color: '#334155', lineHeight: 1.7 }}>
-                      {renderMarkdown(currentQA.answer)}
-                    </div>
-
-                    {/* Sources */}
-                    {currentQA.sources && currentQA.sources.length > 0 && (
-                      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, fontWeight: 600, color: '#64748b' }}>
-                          <svg width={14} height={14} viewBox="0 0 16 16" fill="none"><path d="M4 3h8v10H4V3z" stroke="currentColor" strokeWidth={1.5} /><path d="M7 6h3M7 9h3M7 12h1" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /></svg>
-                          参考来源
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          {currentQA.sources.map((s, si) => (
-                            <div key={si} className="qa-snippet" style={{ padding: '10px 12px 10px 16px', background: '#f8fafc', borderRadius: '0 8px 8px 0', fontSize: 13, lineHeight: 1.5 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                                <div>
-                                  <span style={{ fontSize: 11, fontWeight: 600, color: '#4F46E5', background: '#EEF2FF', padding: '2px 6px', borderRadius: 4, marginRight: 8 }}>来源 {si + 1}</span>
-                                  <span style={{ fontWeight: 500, color: '#334155' }}>{s.title}</span>
-                                </div>
-                                <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: '#ECFDF5', color: '#059669', fontWeight: 500, flexShrink: 0 }}>{Math.round(s.score * 100)}%</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Rejected */}
-              {currentQA && currentQA.is_rejected && (
-                <div className="qa-anim" style={{ animationDelay: '0.15s', background: '#FFFBEB', borderRadius: 12, border: '1px solid #FDE68A', padding: 20, fontSize: 14, color: '#92400E' }}>
-                  {currentQA.answer || '未找到与您问题相关的课程资料，请尝试其他关键词。'}
-                </div>
-              )}
-
-              {/* Typing indicator */}
-              {asking && (
-                <div className="qa-anim" style={{ animationDelay: '0.15s', display: 'flex', gap: 6, padding: 16 }}>
-                  <span className="qa-typing-dot" style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366F1' }} />
-                  <span className="qa-typing-dot" style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366F1' }} />
-                  <span className="qa-typing-dot" style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366F1' }} />
-                </div>
-              )}
-
-              <div ref={endRef} />
-            </div>
-
-            {/* Suggested */}
-            {!currentQA && !asking && (
-              <div className="qa-anim" style={{ animationDelay: '0.2s', marginTop: 24, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                  <svg width={16} height={16} viewBox="0 0 16 16" fill="none"><circle cx={8} cy={8} r={6.5} stroke="#6366F1" strokeWidth={1.5} /><path d="M7.5 7.5h0M8 7.5v0" stroke="#6366F1" strokeWidth={2} strokeLinecap="round" /></svg>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>试试这些问题</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {SUGGESTED_QUESTIONS.map((q, i) => (
-                    <button key={i} onClick={() => { setQuestion(q); askQuestion(q) }}
-                      style={{ textAlign: 'left', fontSize: 14, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 4px', width: '100%' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = '#4F46E5' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b' }}>
-                      {q}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+      <div style={{ display: 'flex', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
+        {/* ====== Left Sidebar ====== */}
+        <div style={{
+          width: 280, flexShrink: 0, borderRight: '1px solid #e2e8f0',
+          display: 'flex', flexDirection: 'column', background: '#f8fafc',
+        }}>
+          {/* New Chat Button */}
+          <div style={{ padding: '16px' }}>
+            <button onClick={newChat}
+              style={{
+                width: '100%', padding: '10px 16px', fontSize: 14, fontWeight: 500,
+                border: '1px solid #e2e8f0', borderRadius: 8, background: '#fff',
+                color: '#334155', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#818CF8'; e.currentTarget.style.color = '#4F46E5' }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = '#334155' }}>
+              <svg width={16} height={16} viewBox="0 0 16 16" fill="none">
+                <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
+              </svg>
+              新对话
+            </button>
           </div>
 
-          {/* History Sidebar */}
-          <div className="qa-anim" style={{ animationDelay: '0.08s' }}>
-            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', position: 'sticky', top: 96 }}>
-              <div style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <svg width={16} height={16} viewBox="0 0 16 16" fill="none"><circle cx={8} cy={8} r={6.5} stroke="#6366F1" strokeWidth={1.5} /><path d="M8 4.5V8l3 2M4.5 8h7" stroke="#6366F1" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" /></svg>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>问答历史</span>
-                </div>
-                <span style={{ fontSize: 11, background: '#f1f5f9', color: '#64748b', padding: '2px 6px', borderRadius: 99 }}>{historyTotal}</span>
-              </div>
-              <div style={{ maxHeight: 'calc(100vh - 220px)', overflow: 'auto' }}>
-                {history.map((item, i) => (
-                  <div key={item.id}
-                    onClick={() => { setQuestion(item.question); setCurrentQA(item); endRef.current?.scrollIntoView({ behavior: 'smooth' }) }}
+          {/* Session List */}
+          <div className="qa-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '0 8px' }}>
+            {sessions.map((s) => (
+              <div key={s.id} className="qa-session-item"
+                onClick={() => loadSession(s.id)}
+                style={{
+                  padding: '12px', marginBottom: 2, borderRadius: 8, cursor: 'pointer',
+                  background: s.id === activeSessionId ? '#EEF2FF' : 'transparent',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => { if (s.id !== activeSessionId) e.currentTarget.style.background = '#f1f5f9' }}
+                onMouseLeave={(e) => { if (s.id !== activeSessionId) e.currentTarget.style.background = 'transparent' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <p style={{
+                    margin: 0, fontSize: 13, fontWeight: 500, color: s.id === activeSessionId ? '#4F46E5' : '#334155',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8,
+                  }}>
+                    {s.title}
+                  </p>
+                  <button className="qa-delete-btn" onClick={(e) => deleteSession(e, s.id)}
                     style={{
-                      padding: '12px 16px', cursor: 'pointer', transition: 'background 0.2s',
-                      borderLeft: item.id === currentQA?.id ? '2px solid #6366F1' : '2px solid transparent',
-                      background: item.id === currentQA?.id ? 'rgba(238,242,255,0.3)' : 'transparent',
-                      borderBottom: i < history.length - 1 ? '1px solid #f8fafc' : 'none',
+                      background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1',
+                      padding: 2, flexShrink: 0, transition: 'opacity 0.15s',
                     }}
-                    onMouseEnter={(e) => { if (item.id !== currentQA?.id) e.currentTarget.style.background = '#f8fafc' }}
-                    onMouseLeave={(e) => { if (item.id !== currentQA?.id) e.currentTarget.style.background = 'transparent' }}
-                  >
-                    <p style={{ fontSize: 13, fontWeight: 500, color: item.id === currentQA?.id ? '#0f172a' : '#64748b', margin: 0, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {item.question}
-                    </p>
-                    <p style={{ fontSize: 11, color: '#94a3b8', margin: '6px 0 0 0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <svg width={12} height={12} viewBox="0 0 16 16" fill="none"><circle cx={8} cy={8} r={6.5} stroke="currentColor" strokeWidth={1.5} /><path d="M8 4v4l2.5 2.5" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /></svg>
-                        {formatTime(item.created_at)}
-                      </span>
-                      {item.sources ? (
-                        <span style={{ fontSize: 10, background: '#EEF2FF', color: '#4F46E5', padding: '1px 4px', borderRadius: 4 }}>{item.sources.length} 来源</span>
-                      ) : (
-                        <span style={{ fontSize: 10, background: '#FFFBEB', color: '#D97706', padding: '1px 4px', borderRadius: 4 }}>未回答</span>
-                      )}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              {historyTotal > history.length && (
-                <div style={{ padding: '10px 16px', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
-                  <button onClick={() => loadHistory(historyPage + 1)}
-                    style={{ fontSize: 12, color: '#4F46E5', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer' }}>
-                    加载更多
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = '#cbd5e1' }}>
+                    <svg width={14} height={14} viewBox="0 0 16 16" fill="none">
+                      <path d="M4 4h8M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M12 4v9a1 1 0 01-1 1H5a1 1 0 01-1-1V4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
                   </button>
                 </div>
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: '#94a3b8' }}>
+                  {s.turn_count} 轮 · {formatTime(s.updated_at)}
+                </p>
+              </div>
+            ))}
+
+            {sessions.length === 0 && (
+              <p style={{ padding: 24, textAlign: 'center', fontSize: 13, color: '#94a3b8' }}>
+                暂无对话记录，开始新对话吧
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* ====== Main Chat Area ====== */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
+          {/* Messages */}
+          <div className="qa-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '24px 0' }}>
+            <div style={{ maxWidth: 768, margin: '0 auto', padding: '0 24px' }}>
+              {loadingSession ? (
+                <div style={{ textAlign: 'center', padding: 48, color: '#94a3b8' }}>加载中...</div>
+              ) : messages.length === 0 && !asking ? (
+                /* Welcome */
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 60 }}>
+                  <div style={{
+                    width: 64, height: 64, borderRadius: 16, background: 'linear-gradient(135deg, #6366F1, #818CF8)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+                  }}>
+                    <svg width={32} height={32} viewBox="0 0 32 32" fill="none">
+                      <path d="M6 10h20M6 16h14M6 22h10" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                    </svg>
+                  </div>
+                  <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', margin: '0 0 8px' }}>EduRAG 智能问答</h2>
+                  <p style={{ fontSize: 14, color: '#94a3b8', margin: '0 0 32px', textAlign: 'center', maxWidth: 400 }}>
+                    基于课程资料为你解答，支持多轮追问
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 500 }}>
+                    {SUGGESTED_QUESTIONS.map((q, i) => (
+                      <button key={i} onClick={() => { setInput(q); doAsk(q) }}
+                        style={{
+                          textAlign: 'left', fontSize: 14, color: '#64748b', background: '#f8fafc',
+                          border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer',
+                          padding: '12px 16px', width: '100%', transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#818CF8'; e.currentTarget.style.color = '#4F46E5'; e.currentTarget.style.background = '#EEF2FF' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = '#64748b'; e.currentTarget.style.background = '#f8fafc' }}>
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Chat Messages */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  {messages.map((m, i) => (
+                    <div key={i} className="qa-fade" style={{ animationDelay: `${i * 0.05}s` }}>
+                      {m.role === 'user' ? (
+                        /* User bubble */
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                          <div style={{
+                            maxWidth: '80%', background: '#EEF2FF', borderRadius: '16px 16px 4px 16px',
+                            padding: '12px 18px', fontSize: 14, color: '#334155', lineHeight: 1.6,
+                          }}>
+                            {m.content}
+                          </div>
+                        </div>
+                      ) : (
+                        /* AI response */
+                        <div style={{
+                          background: m.isRejected ? '#FFFBEB' : '#fff',
+                          borderRadius: 12,
+                          border: m.isRejected ? '1px solid #FDE68A' : '1px solid #e2e8f0',
+                          padding: '16px 20px',
+                        }}>
+                          {m.content ? renderMarkdown(m.content) : m.isRejected ? (
+                            <div style={{
+                              display: 'flex', alignItems: 'flex-start', gap: 10,
+                            }}>
+                              <span style={{ fontSize: 18, flexShrink: 0 }}>⚠️</span>
+                              <span style={{ fontSize: 14, color: '#92400E', lineHeight: 1.6 }}>
+                                {m.rejectionReason || '未找到与您问题相关的课程资料'}
+                              </span>
+                            </div>
+                          ) : (
+                            <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                              未找到与您问题相关的课程资料
+                            </span>
+                          )}
+
+                          {/* Action Buttons */}
+                          {m.content && (
+                            <div style={{
+                              display: 'flex', gap: 6, marginTop: 12, paddingTop: 12,
+                              borderTop: '1px solid #f1f5f9',
+                            }}>
+                              <button onClick={() => handleCopy(m.content, i)} style={{ ...actionBtnStyle, position: 'relative' }}
+                                onMouseEnter={(e) => { if (copiedIdx !== i) { e.currentTarget.style.color = '#4F46E5'; e.currentTarget.style.borderColor = '#C7D2FE'; e.currentTarget.style.background = '#EEF2FF' } }}
+                                onMouseLeave={(e) => { if (copiedIdx !== i) { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'none' } }}>
+                                <svg width={13} height={13} viewBox="0 0 16 16" fill="none"><rect x={5} y={5} width={9} height={9} rx={1} stroke="currentColor" strokeWidth={1.5} /><path d="M3 11V3h8" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /></svg>
+                                {copiedIdx === i ? '已复制 ✓' : '复制'}
+                              </button>
+                              <button onClick={handleRegenerate} style={actionBtnStyle}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = '#4F46E5'; e.currentTarget.style.borderColor = '#C7D2FE'; e.currentTarget.style.background = '#EEF2FF' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'none' }}>
+                                <svg width={13} height={13} viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 0111.2-2.8M14 8a6 6 0 01-11.2 2.8" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /><path d="M14 2v4h-4M2 14v-4h4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                重新生成
+                              </button>
+                              <button onClick={() => setFeedbackModal(true)} style={actionBtnStyle}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = '#4F46E5'; e.currentTarget.style.borderColor = '#C7D2FE'; e.currentTarget.style.background = '#EEF2FF' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'none' }}>
+                                <svg width={13} height={13} viewBox="0 0 16 16" fill="none"><path d="M2 3h12l-1 9H3L2 3z" stroke="currentColor" strokeWidth={1.5} /><circle cx={12} cy={2} r={1.5} stroke="currentColor" strokeWidth={1.5} /><path d="M6 7v3M10 7v3" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /></svg>
+                                反馈
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Sources */}
+                          {m.sources && m.sources.length > 0 && (
+                            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 12, fontWeight: 600, color: '#94a3b8' }}>
+                                <svg width={14} height={14} viewBox="0 0 16 16" fill="none"><path d="M4 3h8v10H4V3z" stroke="currentColor" strokeWidth={1.5} /><path d="M7 6h3M7 9h3M7 12h1" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /></svg>
+                                参考来源 ({m.sources.length})
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {m.sources.map((s, si) => (
+                                  <div key={si} onClick={() => openPreview(s)} style={{
+                                    padding: '10px 12px 10px 16px', background: '#f8fafc',
+                                    borderRadius: '0 8px 8px 0', fontSize: 13, lineHeight: 1.5,
+                                    borderLeft: '3px solid #6366F1', cursor: 'pointer', transition: 'all 0.2s',
+                                  }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.background = '#EEF2FF'; e.currentTarget.style.borderLeftColor = '#4F46E5' }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderLeftColor = '#6366F1' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                                      <div>
+                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#4F46E5', background: '#EEF2FF', padding: '2px 6px', borderRadius: 4, marginRight: 8 }}>来源 {si + 1}</span>
+                                        <span style={{ fontWeight: 500, color: '#334155' }}>{s.title}</span>
+                                      </div>
+                                      <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: '#ECFDF5', color: '#059669', fontWeight: 500, flexShrink: 0 }}>
+                                        {Math.round(s.score * 100)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Typing indicator */}
+                  {asking && (
+                    <div style={{ display: 'flex', gap: 6, padding: '8px 0' }}>
+                      <span className="qa-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366F1' }} />
+                      <span className="qa-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366F1' }} />
+                      <span className="qa-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366F1' }} />
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
               )}
+            </div>
+          </div>
+
+          {/* ====== Source Preview Panel ====== */}
+          {previewSrc && (
+            <div style={{
+              position: 'absolute', right: 0, top: 0, bottom: 0, width: 420,
+              background: '#fff', borderLeft: '1px solid #e2e8f0', zIndex: 20,
+              display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.06)',
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px', borderBottom: '1px solid #e2e8f0',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1, marginRight: 12 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width={16} height={16} viewBox="0 0 16 16" fill="none"><path d="M4 3h8v10H4V3z" stroke="#6366F1" strokeWidth={1.5} /></svg>
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {previewSrc.title}
+                    </p>
+                    <p style={{ margin: '2px 0 0', fontSize: 11, color: '#94a3b8' }}>
+                      匹配度 {Math.round(previewSrc.score * 100)}%
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => { setPreviewSrc(null); setPreviewFileUrl(null) }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 4, flexShrink: 0 }}>
+                  <svg width={18} height={18} viewBox="0 0 18 18" fill="none"><path d="M5 5l8 8M13 5l-8 8" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /></svg>
+                </button>
+              </div>
+
+              {/* Preview content */}
+              <div className="qa-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+                {loadingPreview ? (
+                  <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: 14, paddingTop: 40 }}>加载中...</p>
+                ) : previewFileUrl ? (
+                  <iframe src={previewFileUrl} style={{
+                    width: '100%', height: '100%', minHeight: 500,
+                    border: '1px solid #e2e8f0', borderRadius: 8,
+                  }} />
+                ) : (
+                  <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: 14, paddingTop: 40 }}>
+                    暂无法预览此文件
+                  </p>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8 }}>
+                {previewFileUrl && (
+                  <button onClick={() => window.open(previewFileUrl, '_blank')}
+                    style={{
+                      flex: 1, padding: '8px 16px', fontSize: 13, fontWeight: 500,
+                      color: '#fff', background: '#6366F1', border: 'none', borderRadius: 8, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    }}>
+                    <svg width={14} height={14} viewBox="0 0 16 16" fill="none">
+                      <path d="M3 2h6l4 4v8a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth={1.5} />
+                      <path d="M9 2v4h4" stroke="currentColor" strokeWidth={1.5} />
+                    </svg>
+                    新窗口打开
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ====== Bottom Input ====== */}
+          <div style={{ borderTop: '1px solid #e2e8f0', background: '#fff', padding: '16px 0' }}>
+            <div style={{ maxWidth: 768, margin: '0 auto', padding: '0 24px' }}>
+              <div style={{
+                display: 'flex', alignItems: 'flex-end', gap: 12,
+                border: '1px solid #e2e8f0', borderRadius: 12, padding: '8px 8px 8px 16px',
+                transition: 'border-color 0.2s',
+                background: '#fff',
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#c7d2fe' }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0' }}>
+                <textarea
+                  ref={inputRef}
+                  rows={1}
+                  placeholder="输入你的问题，Enter 发送，Shift+Enter 换行..."
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  style={{
+                    flex: 1, border: 'none', outline: 'none', resize: 'none',
+                    fontSize: 14, color: '#0f172a', lineHeight: 1.5,
+                    fontFamily: 'inherit', maxHeight: 120, padding: '4px 0',
+                  }}
+                />
+                <button onClick={() => doAsk()} disabled={!input.trim() || asking}
+                  style={{
+                    width: 36, height: 36, borderRadius: 8, border: 'none',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: input.trim() && !asking ? 'pointer' : 'default',
+                    background: input.trim() && !asking ? '#6366F1' : '#e2e8f0',
+                    transition: 'all 0.2s', flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => { if (input.trim() && !asking) e.currentTarget.style.background = '#4F46E5' }}
+                  onMouseLeave={(e) => { if (input.trim() && !asking) e.currentTarget.style.background = '#6366F1' }}>
+                  <svg width={16} height={16} viewBox="0 0 16 16" fill="none">
+                    <path d="M2 2l12 6-12 6 3-6-3-6z" stroke="#fff" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              </div>
+              <p style={{ fontSize: 11, color: '#cbd5e1', margin: '6px 0 0', textAlign: 'center' }}>
+                EduRAG 基于课程资料回答，答案仅供参考
+              </p>
             </div>
           </div>
         </div>
-      </main>
+      </div>
+
+      {/* ====== Feedback Modal ====== */}
+      {feedbackModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}
+          onClick={() => { setFeedbackModal(false); setFeedbackType(''); setFeedbackComment('') }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 24, maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
+            onClick={(e) => e.stopPropagation()}>
+            <p style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', margin: '0 0 16px' }}>反馈</p>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              {[
+                { type: 'useful', label: '👍 有用', color: '#059669', bg: '#ECFDF5' },
+                { type: 'useless', label: '👎 无用', color: '#D97706', bg: '#FFFBEB' },
+                { type: 'error', label: '⚠️ 有误', color: '#DC2626', bg: '#FEF2F2' },
+              ].map((opt) => (
+                <button key={opt.type} onClick={() => setFeedbackType(opt.type)}
+                  style={{
+                    flex: 1, padding: '10px 8px', fontSize: 13, fontWeight: 500, borderRadius: 8,
+                    border: feedbackType === opt.type ? `2px solid ${opt.color}` : '1px solid #e2e8f0',
+                    background: feedbackType === opt.type ? opt.bg : '#fff',
+                    color: feedbackType === opt.type ? opt.color : '#64748b',
+                    cursor: 'pointer', transition: 'all 0.15s',
+                  }}>{opt.label}</button>
+              ))}
+            </div>
+
+            <textarea placeholder="补充说明（选填）..." value={feedbackComment}
+              onChange={(e) => setFeedbackComment(e.target.value)} rows={3}
+              style={{
+                width: '100%', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px',
+                fontSize: 13, color: '#334155', outline: 'none', resize: 'none', fontFamily: 'inherit', marginBottom: 16,
+              }} />
+
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+              <button onClick={() => { setFeedbackModal(false); setFeedbackType(''); setFeedbackComment('') }}
+                style={{ padding: '8px 20px', fontSize: 14, fontWeight: 500, color: '#64748b', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>取消</button>
+              <button onClick={submitFeedback} disabled={!feedbackType || feedbackSubmitting}
+                style={{ padding: '8px 20px', fontSize: 14, fontWeight: 600, borderRadius: 8, border: 'none', cursor: feedbackType ? 'pointer' : 'default', color: '#fff', background: feedbackType ? '#6366F1' : '#c7d2fe' }}>
+                {feedbackSubmitting ? '提交中...' : '提交'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
+}
+
+const actionBtnStyle: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 5,
+  padding: '4px 10px', fontSize: 12, color: '#64748b',
+  background: 'none', border: '1px solid #e2e8f0', borderRadius: 6,
+  cursor: 'pointer', transition: 'all 0.15s',
 }
