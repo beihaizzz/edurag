@@ -19,6 +19,7 @@ import DocumentListPage from '../pages/teacher/DocumentListPage'
 import AdminHomePage from '../pages/admin/AdminHomePage'
 import ReviewList from '../pages/admin/ReviewList'
 import UserManage from '../pages/admin/UserManage'
+import AuditLogPage from '../pages/admin/AuditLogPage'
 
 const router = createBrowserRouter([
   // ── 公开路由 ──
@@ -72,6 +73,7 @@ const router = createBrowserRouter([
               { path: '/admin', element: <AdminHomePage /> },
               { path: '/admin/review', element: <ReviewList /> },
               { path: '/admin/users', element: <UserManage /> },
+              { path: '/admin/audit-logs', element: <AuditLogPage /> },
               // 管理端也能访问教师文档管理
               { path: '/teacher/documents/upload', element: <DocumentUploadPage /> },
               { path: '/teacher/documents', element: <DocumentListPage /> },

@@ -19,6 +19,7 @@ from app.graph.state import RAGState
 from app.models import User, UserSession
 from app.schemas.common import APIResponse, PaginatedData
 from app.schemas.search import QaCreate
+from app.services.audit import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,11 @@ async def ask_question(
     )
     db.add(session_record)
     await db.commit()
+
+    await log_action(db, user.id, "ask_question", {
+        "course_id": course_id,
+        "question": question[:100],
+    })
 
     async def event_stream():
         try:

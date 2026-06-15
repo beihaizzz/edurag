@@ -12,6 +12,7 @@ from app.core.security import hash_password
 from app.deps import require_role
 from app.models import AuditLog, Course, Document, QAHistory, User
 from app.schemas.common import APIResponse, PaginatedData
+from app.services.audit import log_action
 
 router = APIRouter(prefix="", tags=["admin"])
 
@@ -162,6 +163,124 @@ async def admin_list_users(
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Batch 请求模型
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class BatchUserIdsRequest(BaseModel):
+    user_ids: list[int]
+
+
+class BatchRoleRequest(BaseModel):
+    user_ids: list[int]
+    role: str
+
+
+class BatchStatusRequest(BaseModel):
+    user_ids: list[int]
+    is_active: bool
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PUT /admin/users/batch/role
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.put("/admin/users/batch/role")
+async def admin_batch_change_role(
+    body: BatchRoleRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """批量修改用户角色"""
+    if body.role not in VALID_ROLES:
+        return APIResponse(code=40001, message=f"无效的角色: {body.role}")
+    if not body.user_ids:
+        return APIResponse(code=40003, message="用户列表不能为空")
+    if _user.id in body.user_ids:
+        return APIResponse(code=40002, message="不能修改自己的角色")
+
+    await db.execute(
+        update(User).where(User.id.in_(body.user_ids)).values(role=body.role)
+    )
+    await db.commit()
+
+    await log_action(db, _user.id, "batch_change_role", {
+        "user_ids": body.user_ids, "role": body.role,
+    })
+
+    return APIResponse(
+        message=f"已将 {len(body.user_ids)} 个用户的角色变更为 {body.role}",
+        data={"affected": len(body.user_ids)},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PUT /admin/users/batch/status
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.put("/admin/users/batch/status")
+async def admin_batch_change_status(
+    body: BatchStatusRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """批量启用/禁用用户"""
+    if not body.user_ids:
+        return APIResponse(code=40003, message="用户列表不能为空")
+    if _user.id in body.user_ids:
+        return APIResponse(code=40002, message="不能修改自己的状态")
+
+    await db.execute(
+        update(User).where(User.id.in_(body.user_ids)).values(is_active=body.is_active)
+    )
+    await db.commit()
+
+    await log_action(db, _user.id, "batch_toggle_user", {
+        "user_ids": body.user_ids, "is_active": body.is_active,
+    })
+
+    action = "启用" if body.is_active else "禁用"
+    return APIResponse(
+        message=f"已{action} {len(body.user_ids)} 个用户",
+        data={"affected": len(body.user_ids)},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# POST /admin/users/batch/reset-password
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.post("/admin/users/batch/reset-password")
+async def admin_batch_reset_password(
+    body: BatchUserIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """批量重置用户密码"""
+    if not body.user_ids:
+        return APIResponse(code=40003, message="用户列表不能为空")
+
+    await db.execute(
+        update(User)
+        .where(User.id.in_(body.user_ids))
+        .values(password_hash=hash_password(RESET_PASSWORD), force_password_change=True)
+    )
+    await db.commit()
+
+    await log_action(db, _user.id, "batch_reset_password", {
+        "user_ids": body.user_ids,
+    })
+
+    return APIResponse(
+        message=f"已重置 {len(body.user_ids)} 个用户的密码为 {RESET_PASSWORD}",
+        data={"affected": len(body.user_ids)},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # PUT /admin/users/{id}/disable
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -180,9 +299,58 @@ async def admin_disable_user(
     target.is_active = not target.is_active
     await db.commit()
 
+    await log_action(db, _user.id, "toggle_user", {
+        "user_id": user_id, "username": target.username, "is_active": target.is_active,
+    })
+
     return APIResponse(
         message=f"用户已{'启用' if target.is_active else '禁用'}",
         data={"user_id": user_id, "is_active": target.is_active},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PUT /admin/users/{id}/role
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class RoleChangeRequest(BaseModel):
+    role: str
+
+
+VALID_ROLES = {"student", "teacher", "admin"}
+
+
+@router.put("/admin/users/{user_id}/role")
+async def admin_change_role(
+    user_id: int,
+    body: RoleChangeRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """修改用户角色"""
+    if body.role not in VALID_ROLES:
+        return APIResponse(code=40001, message=f"无效的角色: {body.role}")
+
+    target = await db.get(User, user_id)
+    if not target:
+        return APIResponse(code=40401, message="用户不存在")
+
+    if target.id == _user.id:
+        return APIResponse(code=40002, message="不能修改自己的角色")
+
+    old_role = target.role
+    target.role = body.role
+    await db.commit()
+
+    await log_action(db, _user.id, "change_role", {
+        "user_id": user_id, "username": target.username,
+        "old_role": old_role, "new_role": body.role,
+    })
+
+    return APIResponse(
+        message=f"角色已从 {old_role} 变更为 {body.role}",
+        data={"user_id": user_id, "old_role": old_role, "new_role": body.role},
     )
 
 
@@ -191,27 +359,31 @@ async def admin_disable_user(
 # ═══════════════════════════════════════════════════════════════════════
 
 
+RESET_PASSWORD = "123456"
+
+
 @router.post("/admin/users/{user_id}/reset-password")
 async def admin_reset_password(
     user_id: int,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_role("admin")),
 ):
-    """管理员重置用户密码（生成 8 位临时密码）"""
-    import secrets
-
+    """管理员重置用户密码为固定密码"""
     target = await db.get(User, user_id)
     if not target:
         return APIResponse(code=40401, message="用户不存在")
 
-    temp_password = secrets.token_urlsafe(6)[:8]
-    target.password_hash = hash_password(temp_password)
+    target.password_hash = hash_password(RESET_PASSWORD)
     target.force_password_change = True
     await db.commit()
 
+    await log_action(db, _user.id, "reset_password", {
+        "user_id": user_id, "username": target.username,
+    })
+
     return APIResponse(
-        message="密码已重置",
-        data={"user_id": user_id, "temp_password": temp_password},
+        message=f"密码已重置为 {RESET_PASSWORD}",
+        data={"user_id": user_id, "temp_password": RESET_PASSWORD},
     )
 
 
@@ -249,9 +421,7 @@ async def admin_list_audit_logs(
                         "id": l.id,
                         "user_id": l.user_id,
                         "action": l.action,
-                        "target_type": l.target_type,
-                        "target_id": l.target_id,
-                        "details": l.details,
+                        "detail": l.detail,
                         "ip_address": l.ip_address,
                         "created_at": l.created_at.isoformat() if l.created_at else None,
                     }
