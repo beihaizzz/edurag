@@ -62,6 +62,9 @@ data/
 .langgraph_api/
 .claude/
 
+# Backend runtime artifacts
+backend/.startup.*
+
 # Course materials (binary files — use Git LFS or cloud storage)
 docs/**/*.pdf
 docs/**/*.ppt

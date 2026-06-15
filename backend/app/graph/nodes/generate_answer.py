@@ -8,7 +8,7 @@ import logging
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.graph.llm import invoke_llm
-from app.graph.prompts.generate import GENERATE_SYSTEM_PROMPT
+from app.graph.prompts.generate import GENERATE_FALLBACK_PROMPT, GENERATE_SYSTEM_PROMPT
 from app.graph.state import RAGState
 
 logger = logging.getLogger(__name__)
@@ -30,8 +30,11 @@ async def generate_answer(state: RAGState) -> dict:
     search_mode = state.get("search_mode", "internal")
     sources = state.get("sources", [])
 
-    # Build system prompt with context injected
-    system_prompt = GENERATE_SYSTEM_PROMPT.format(context=context)
+    # Build system prompt — use fallback if no context, else inject context
+    if not context or not context.strip():
+        system_prompt = GENERATE_FALLBACK_PROMPT
+    else:
+        system_prompt = GENERATE_SYSTEM_PROMPT.format(context=context)
 
     # Build messages list
     messages: list = [SystemMessage(content=system_prompt)]

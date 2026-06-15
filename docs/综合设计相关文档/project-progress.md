@@ -71,6 +71,7 @@
 | 2026-06-12 | ✅ RAG 问答端到端全链路调通：上传 → 处理 → 审核 → 向量检索 → JSON 生成（含引用）→ 审核 PASS → SSE 流式返回 |
 | 2026-06-12 | ✅ 第 3 周核心功能全部完成：LangGraph 12-node pipeline、SSE 流式输出、三层安全防护（L0/L1/L3）、混合检索、JSON 模式引用、LangGraph checkpointer 持久化 + Tavily web search |
 | 2026-06-14 | ✅ 修复 QAHistory 写入管道（qa.py 新增 QAHistory 持久化），新增 T3.12 教师数据洞察 API（GET /admin/qa/stats）+ T3.13 系统日志 API（GET /admin/logs） |
+| 2026-06-15 | 📝 文档版本同步：6 份设计文档（详细设计/API接口/功能点/开发计划/技术设计/数据库设计）统一至 v1.3；更新 `.gitignore` 覆盖 `backend/.startup.*` 运行时产物；项目完整性审计完成 |
 
 ---
 

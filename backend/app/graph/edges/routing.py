@@ -14,7 +14,7 @@ def route_after_classify(state: RAGState) -> str:
 
 
 def route_after_rerank(state: RAGState) -> str:
-    """After rerank: route to build_context, web_search, or reject."""
+    """After rerank: route to build_context, web_search, or generate_answer."""
     has_results = state.get("has_internal_results", False)
     use_web = state.get("use_web_search", False)
 
@@ -22,15 +22,12 @@ def route_after_rerank(state: RAGState) -> str:
         return "build_context"
     if use_web:
         return "web_search"
-    return "reject"
+    return "generate_answer"
 
 
 def route_after_web_search(state: RAGState) -> str:
-    """After web search: route to generate_answer or reject."""
-    has_web = state.get("has_web_results", False)
-    if has_web:
-        return "generate_answer"
-    return "reject"
+    """After web search: always route to generate_answer."""
+    return "generate_answer"
 
 
 def route_after_review(state: RAGState) -> str:

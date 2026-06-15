@@ -11,7 +11,6 @@ from app.graph.edges.routing import (
     route_after_classify,
     route_after_rerank,
     route_after_review,
-    route_after_web_search,
 )
 from app.graph.nodes.build_context import build_context
 from app.graph.nodes.classify_intent import classify_intent
@@ -33,11 +32,10 @@ async def build_rag_graph() -> StateGraph:
     Graph topology:
     START → classify_intent → [NORMAL→rag_search | other→reject]
     rag_search → rerank
-    rerank → [has_results→build_context | web_on→web_search | web_off→reject]
+    rerank → [has_results→build_context | web_on→web_search | web_off→generate_answer]
     build_context → generate_answer
-    web_search → [has_web→generate_answer | other→reject]
-    generate_answer → review_output
-    review_output → [PASS→return_answer | REJECT→reject]
+    web_search → generate_answer
+    generate_answer → review_output → [PASS→return_answer | REJECT→reject]
     reject → END
     return_answer → END
     """
@@ -73,17 +71,14 @@ async def build_rag_graph() -> StateGraph:
         {
             "build_context": "build_context",
             "web_search": "web_search",
-            "reject": "reject",
+            "generate_answer": "generate_answer",
         },
     )
 
     builder.add_edge("build_context", "generate_answer")
 
-    builder.add_conditional_edges(
-        "web_search",
-        route_after_web_search,
-        {"generate_answer": "generate_answer", "reject": "reject"},
-    )
+    # web_search → generate_answer (always — no-context/fallback handled by LLM)
+    builder.add_edge("web_search", "generate_answer")
 
     builder.add_edge("generate_answer", "review_output")
 

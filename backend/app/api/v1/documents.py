@@ -7,7 +7,7 @@ import math
 import os
 
 import aiofiles
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -409,6 +409,7 @@ async def delete_document(
 async def approve_document(
     document_id: int,
     body: DocumentApprove,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role("admin")),
 ):
@@ -427,6 +428,11 @@ async def approve_document(
     doc.status = body.status
     doc.audit_comment = body.comment
     doc.auditor_id = user.id
+
+    if body.status == "approved":
+        from app.services.document_processor import _run_pipeline_background
+
+        background_tasks.add_task(_run_pipeline_background, document_id)
 
     await db.commit()
     await db.refresh(doc, attribute_names=["course", "uploader"])
@@ -455,72 +461,12 @@ async def process_document(
     if doc.uploader_id != user.id and user.role != "admin":
         raise HTTPException(status_code=403, detail="只能处理自己上传的文档")
 
-    try:
-        # Mark as processing
-        doc.processing_status = "processing"
-        await db.commit()
+    from app.services.document_processor import run_document_pipeline
 
-        # 1. Parse
-        from app.services.document_parser import parse_document
-        parsed = await parse_document(doc.file_path)
-        if parsed.error:
-            doc.processing_status = "failed"
-            await db.commit()
-            return APIResponse(code=50001, message=f"解析失败: {parsed.error}")
-
-        # 2. Chunk
-        from app.services.chunker import chunk_text
-        chunks = await chunk_text(parsed.text, metadata={
-            "document_id": doc.id,
-            "title": doc.title,
-        })
-        if not chunks:
-            doc.processing_status = "failed"
-            await db.commit()
-            return APIResponse(code=50001, message="文档无有效文本内容")
-
-        # 3. Save Chunk records to DB
-        from app.models import Chunk
-        chunk_records = []
-        for c in chunks:
-            cr = Chunk(
-                document_id=doc.id,
-                chunk_index=c.index,
-                content=c.content,
-                char_count=c.char_count,
-            )
-            db.add(cr)
-            chunk_records.append(cr)
-        await db.flush()
-
-        # 4. Vectorize
-        try:
-            from app.services.vector_store import vector_store
-            vec_chunks = [
-                {
-                    "chunk_id": cr.id,
-                    "document_id": doc.id,
-                    "content": cr.content,
-                    "metadata": {"title": doc.title, "course_id": doc.course_id},
-                }
-                for cr in chunk_records
-            ]
-            await vector_store.add_chunks(vec_chunks)
-        except Exception as e:
-            logger.warning("Vector store unavailable, skipping: %s", e)
-
-        doc.processing_status = "completed"
-        await db.commit()
-
-        return APIResponse(
-            message=f"处理完成，共 {len(chunks)} 个片段",
-            data={"chunk_count": len(chunks)},
-        )
-    except Exception:
-        logger.exception("Document processing failed for doc %d", document_id)
-        doc.processing_status = "failed"
-        await db.commit()
-        return APIResponse(code=50001, message="处理失败，请查看日志")
+    result = await run_document_pipeline(db, document_id)
+    if not result["success"]:
+        return APIResponse(code=50001, message=result["message"])
+    return APIResponse(message=result["message"], data={"chunk_count": result["chunk_count"]})
 
 
 # ── helper ─────────────────────────────────────────────────────────

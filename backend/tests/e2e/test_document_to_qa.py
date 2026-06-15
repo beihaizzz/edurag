@@ -780,8 +780,8 @@ class TestCrossModuleE2E:
 class TestDegradationE2E:
     """Task 33: Degradation behaviour when no internal documents match.
 
-    Scenario A: No indexed documents + use_web_search=False → rejection
-    Scenario B: No indexed documents + use_web_search=True → web fallback or rejection
+    Scenario A: No indexed documents + use_web_search=False → generate_answer (no reject)
+    Scenario B: No indexed documents + use_web_search=True → web fallback → generate_answer
 
     Uses unique UUID questions that are guaranteed to have no matching documents.
     """
@@ -833,10 +833,12 @@ class TestDegradationE2E:
         async_client: AsyncClient,
         create_test_user,
     ):
-        """When no documents match and web search is ON, the system may fallback or reject.
+        """When no documents match and web search is ON, the system generates an answer.
 
-        The system should NOT crash (status 200). If it rejects, it should provide a reason.
-        If it falls back to web, the answer should be non-empty.
+        After the routing fix, web_search always routes to generate_answer regardless
+        of whether web results were found. The system should NOT crash (status 200),
+        and should NOT return a rejection (is_rejected=False). The answer should be
+        non-empty (using either web results or AI's own knowledge).
         """
         _, token = await create_test_user(role="student")
 
@@ -853,19 +855,15 @@ class TestDegradationE2E:
         assert "answer" in done_data, "done event missing 'answer'"
         assert "is_rejected" in done_data, "done event missing 'is_rejected'"
 
-        if done_data["is_rejected"]:
-            # If rejected, there should be a reason
-            reason = done_data.get("rejection_reason", "")
-            assert reason or done_data.get("rejection_reason") is not None, (
-                f"Rejection without reason: {done_data}"
-            )
-        else:
-            # If NOT rejected (web fallback worked), answer should be non-empty
-            answer = done_data.get("answer", "")
-            assert len(answer) > 0, (
-                f"Non-rejected QA should have a non-empty answer. "
-                f"answer={answer[:200]}"
-            )
+        assert done_data["is_rejected"] is False, (
+            f"Expected non-rejection after routing fix: web_search always routes "
+            f"to generate_answer. done data: {done_data}"
+        )
+        answer = done_data.get("answer", "")
+        assert len(answer) > 0, (
+            f"QA should have a non-empty answer. "
+            f"answer={answer[:200]}"
+        )
 
     @real_llm_available
     @pytest.mark.e2e

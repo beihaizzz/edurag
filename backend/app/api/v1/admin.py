@@ -187,6 +187,46 @@ async def admin_disable_user(
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# PUT /admin/users/{id}/role
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class _UpdateRoleRequest(BaseModel):
+    """更新用户角色请求体"""
+    role: str
+
+
+@router.put("/admin/users/{user_id}/role")
+async def admin_update_user_role(
+    user_id: int,
+    body: _UpdateRoleRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """管理员修改用户角色（student ↔ teacher，不可设为 admin）"""
+    if body.role not in {"student", "teacher"}:
+        return APIResponse(code=400, message="角色值无效，仅支持 student/teacher")
+
+    if user_id == _user.id:
+        return APIResponse(code=403, message="不能修改自己的角色")
+
+    target = await db.get(User, user_id)
+    if not target:
+        return APIResponse(code=40401, message="用户不存在")
+
+    if target.role == "admin":
+        return APIResponse(code=403, message="不能修改管理员角色")
+
+    target.role = body.role
+    await db.commit()
+
+    return APIResponse(
+        message="角色已更新",
+        data={"user_id": user_id, "new_role": target.role},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # POST /admin/users/{id}/reset-password
 # ═══════════════════════════════════════════════════════════════════════
 

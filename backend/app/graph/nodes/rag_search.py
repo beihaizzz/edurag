@@ -54,17 +54,14 @@ async def rag_search(state: RAGState) -> dict:
         logger.exception("Vector search failed")
         return {"internal_results": [], "has_internal_results": False}
 
-    # Skip threshold filtering on rerank path — reranker handles relevance
-    if settings.RERANK_ENABLED:
-        filtered = results
-    else:
-        filtered = [
-            r for r in results
-            if r.get("score", 0) >= settings.RAG_SIMILARITY_THRESHOLD
-        ]
+    # Always apply similarity threshold to eliminate noise before routing decision
+    filtered = [
+        r for r in results
+        if r.get("score", 0) >= settings.RAG_SIMILARITY_THRESHOLD
+    ]
 
     has_results = len(filtered) > 0
-    logger.info("RAG search: %d raw → %d filtered (threshold=%.2f)", len(results), len(filtered), settings.RAG_SIMILARITY_THRESHOLD)
+    logger.info("RAG search: %d raw → %d filtered (threshold=%.2f, rerank=%s)", len(results), len(filtered), settings.RAG_SIMILARITY_THRESHOLD, settings.RERANK_ENABLED)
 
     # Fetch document titles for source citation
     doc_ids = {r.get("document_id") for r in filtered if r.get("document_id")}

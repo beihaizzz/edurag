@@ -5,7 +5,7 @@ that each of the 6 possible paths through the graph behaves correctly:
 
   Path 1: NORMAL → rag_search → build_context → generate → review PASS → return_answer
   Path 2: ATTACK / CHEATING / SENSITIVE → reject
-  Path 3: NORMAL → rag_search(empty) + web=off → reject
+  Path 3: NORMAL → rag_search(empty) + web=off → generate_answer → review → return
   Path 4: NORMAL → rag_search(empty) + web=on → web_search → generate → return
   Path 5: generate_answer → review REJECT → reject
   Path 6: Multi-turn same thread_id, chat_history accumulates
@@ -164,17 +164,24 @@ class TestPath2IntentRejection:
 
 
 # ═══════════════════════════════════════════════════════════════
-# Path 3: No results — empty internal search + web off → reject
+# Path 3: No results — empty internal search + web off → generate_answer → review → return
 # ═══════════════════════════════════════════════════════════════
 
 class TestPath3NoResults:
-    """Empty RAG results with web search disabled should reject gracefully."""
+    """Empty RAG results with web search disabled should still generate an answer."""
 
     @real_llm_available
     @pytest.mark.asyncio
     async def test_no_results_returns_reject(self, compiled_graph):
-        """Obscure question with no internal matches should be rejected."""
-        with patch("app.graph.nodes.rag_search.settings.RERANK_ENABLED", False):
+        """Obscure question with no internal matches should still generate an answer.
+
+        After the routing fix, no-results + web-off flows to generate_answer
+        instead of reject.  The review LLM is mocked to PASS to eliminate
+        non-deterministic flakiness.
+        """
+        with patch("app.graph.nodes.rag_search.settings.RERANK_ENABLED", False), patch(
+            "app.graph.nodes.review_output.invoke_llm", return_value="PASS"
+        ):
             state = {
                 "question": "量子计算与古生物学的交叉研究",
                 "chat_history": [],
@@ -194,12 +201,16 @@ class TestPath3NoResults:
         assert "classify_intent" in names
         assert "rag_search" in names
         assert "rerank" in names
-        assert "reject" in names
-        assert "return_answer" not in names
+        assert "generate_answer" in names
+        assert "review_output" in names
+        assert "return_answer" in names
+        assert "reject" not in names
 
-        reject_event = next(e["reject"] for e in events if "reject" in e)
-        assert reject_event.get("is_rejected") is True
-        assert reject_event.get("rejection_category") == "no_results"
+        final = next(
+            (e["return_answer"] for e in events if "return_answer" in e), None
+        )
+        assert final is not None
+        assert final.get("is_rejected") is False
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -237,6 +248,9 @@ class TestPath4WebFallback:
 
         with patch(
             "app.graph.nodes.rag_search.settings.RERANK_ENABLED", False
+        ), patch(
+            "app.graph.nodes.rag_search.vector_store.search",
+            AsyncMock(return_value=[]),
         ), patch(
             "app.graph.nodes.web_search.search_tavily",
             AsyncMock(return_value=mock_web_results),

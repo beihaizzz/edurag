@@ -3,7 +3,7 @@
 Covers 5 graph paths with 6 test cases:
   1. Happy path: NORMAL → rag_search → build_context → generate → review PASS → return
   2. Intent blocked: ATTACK via L0 regex → reject
-  3. No results + web off: NORMAL → rag_search (empty) → reject
+  3. No results + web off: NORMAL → rag_search (empty) → generate_answer → review → return
   4. Review rejection: NORMAL → ... → review REJECT → reject
   5. Web search fallback: NORMAL → rag_search (empty) → web_search → generate → PASS
   6. Multi-turn memory: 2 turns on same thread_id accumulate chat_history
@@ -148,8 +148,12 @@ class TestGraphRejectionPaths:
 
     @pytest.mark.asyncio
     async def test_no_results_without_web(self, graph):
-        """Path 3: No internal results and web search disabled → reject."""
+        """Path 3: No internal results and web search disabled → generate answer."""
         mock_cls = _mock_invoke_llm("NORMAL")
+        mock_gen = _mock_invoke_llm(
+            '{"answer": "未找到相关资料，以下是根据通用知识的回答。", "citations": []}'
+        )
+        mock_rev = _mock_invoke_llm("PASS")
 
         with patch(
             "app.graph.nodes.classify_intent.invoke_llm",
@@ -160,16 +164,24 @@ class TestGraphRejectionPaths:
             ) as mock_vs:
                 mock_vs.search = AsyncMock(return_value=[])
 
-                result = await graph.ainvoke(
-                    {
-                        "question": "xyznonexistent",
-                        "use_web_search": False,
-                    },
-                    {"configurable": {"thread_id": "test-3"}},
-                )
+                with patch(
+                    "app.graph.nodes.generate_answer.invoke_llm",
+                    mock_gen,
+                ):
+                    with patch(
+                        "app.graph.nodes.review_output.invoke_llm",
+                        mock_rev,
+                    ):
+                        result = await graph.ainvoke(
+                            {
+                                "question": "xyznonexistent",
+                                "use_web_search": False,
+                            },
+                            {"configurable": {"thread_id": "test-3"}},
+                        )
 
-        assert result["is_rejected"] is True
-        assert "未找到" in result["answer"]
+        assert result["is_rejected"] is False
+        assert len(result["answer"]) > 0
 
     @pytest.mark.asyncio
     async def test_review_rejection_by_mechanical_check(self, graph):

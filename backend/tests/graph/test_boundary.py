@@ -62,7 +62,7 @@ class TestRouteAfterClassify:
 # ═══════════════════════════════════════════════════════════════
 
 class TestRouteAfterRerank:
-    """Routing from rerank node: results, web fallback, or reject."""
+    """Routing from rerank node: results, web fallback, or generate_answer."""
 
     # --- has_results → build_context (priority over web) ---
 
@@ -97,25 +97,25 @@ class TestRouteAfterRerank:
         })
         assert result == "web_search"
 
-    # --- no results, no web → reject ---
+    # --- no results, no web → generate_answer ---
 
-    def test_no_results_web_false_routes_to_reject(self):
-        """No internal results + web disabled → 'reject'."""
+    def test_no_results_web_false_routes_to_generate_answer(self):
+        """No internal results + web disabled → 'generate_answer'."""
         result = route_after_rerank({
             "has_internal_results": False,
             "use_web_search": False,
         })
-        assert result == "reject"
+        assert result == "generate_answer"
 
-    def test_empty_state_routes_to_reject(self):
-        """Empty state → reject (all defaults falsy)."""
+    def test_empty_state_routes_to_generate_answer(self):
+        """Empty state → generate_answer (all defaults falsy)."""
         result = route_after_rerank({})
-        assert result == "reject"
+        assert result == "generate_answer"
 
-    def test_missing_keys_routes_to_reject(self):
-        """State with unrelated keys → reject (defaults)."""
+    def test_missing_keys_routes_to_generate_answer(self):
+        """State with unrelated keys → generate_answer (defaults)."""
         result = route_after_rerank({"question": "anything"})
-        assert result == "reject"
+        assert result == "generate_answer"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -123,22 +123,22 @@ class TestRouteAfterRerank:
 # ═══════════════════════════════════════════════════════════════
 
 class TestRouteAfterWebSearch:
-    """Routing from web_search node: results → generate_answer, else reject."""
+    """Routing from web_search node: always → generate_answer."""
 
     def test_has_web_results_routes_to_generate_answer(self):
         """Web results found → 'generate_answer'."""
         result = route_after_web_search({"has_web_results": True})
         assert result == "generate_answer"
 
-    def test_no_web_results_routes_to_reject(self):
-        """No web results → 'reject'."""
+    def test_no_web_results_routes_to_generate_answer(self):
+        """No web results → 'generate_answer'."""
         result = route_after_web_search({"has_web_results": False})
-        assert result == "reject"
+        assert result == "generate_answer"
 
-    def test_empty_state_routes_to_reject(self):
-        """Empty state → reject (default has_web_results=False)."""
+    def test_empty_state_routes_to_generate_answer(self):
+        """Empty state → generate_answer (default has_web_results=False)."""
         result = route_after_web_search({})
-        assert result == "reject"
+        assert result == "generate_answer"
 
 
 # ═══════════════════════════════════════════════════════════════
