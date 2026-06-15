@@ -24,6 +24,8 @@ export default function UserManage() {
   const [modal, setModal] = useState<{ type: string; user: UserItem } | null>(null)
   const [acting, setActing] = useState(false)
   const [tempPw, setTempPw] = useState('')
+  const [newRole, setNewRole] = useState('')
+  const [error, setError] = useState('')
   const pageSize = 10
 
   const load = async (p: number) => {
@@ -54,15 +56,14 @@ export default function UserManage() {
         const r = await api.post<APIResponse<{ temp_password: string }>>(`/admin/users/${modal.user.id}/reset-password`)
         if (r.data.code === 0 && r.data.data) setTempPw(r.data.data.temp_password)
       } else if (modal.type === 'role') {
-        // API endpoint not yet implemented; show message
-        setActing(false); setModal(null); return
+        await api.put(`/admin/users/${modal.user.id}/role`, { role: newRole })
       }
       if (modal.type !== 'reset') { setModal(null); load(page) }
-    } catch { /* */ }
-    finally { if (modal.type === 'reset') setActing(false) }
+    } catch (e: any) { setError(e?.response?.data?.message || e?.message || '操作失败，请重试') }
+    finally { setActing(false) }
   }
 
-  const closeModal = () => { setModal(null); setTempPw('') }
+  const closeModal = () => { setModal(null); setTempPw(''); setError('') }
 
   return (
     <>
@@ -133,7 +134,7 @@ export default function UserManage() {
                           <span style={{ fontSize: 12, color: '#cbd5e1' }}>不可操作</span>
                         ) : (
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            <button onClick={() => setModal({ type: 'role', user: u })}
+                            <button onClick={() => { setModal({ type: 'role', user: u }); setNewRole(u.role === 'student' ? 'teacher' : 'student') }}
                               style={{ fontSize: 12, color: '#6366F1', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: 4 }}
                               onMouseEnter={(e) => { e.currentTarget.style.background = '#EEF2FF' }}
                               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>改角色</button>
@@ -188,6 +189,7 @@ export default function UserManage() {
                 <>
                   <p style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', margin: '0 0 8px' }}>重置密码</p>
                   <p style={{ fontSize: 14, color: '#64748b', margin: '0 0 12px' }}>确定重置用户 <strong>{modal.user.username}</strong> 的密码吗？系统将生成一个临时密码。</p>
+                  {error && <p style={{ fontSize: 13, color: '#dc2626', margin: '0 0 8px', textAlign: 'center' }}>{error}</p>}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 20 }}>
                     <button onClick={closeModal} disabled={acting}
                       style={{ padding: '8px 20px', fontSize: 14, color: '#64748b', fontWeight: 500, borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>取消</button>
@@ -201,6 +203,7 @@ export default function UserManage() {
                 <>
                   <p style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', margin: '0 0 8px' }}>{modal.user.is_active ? '禁用用户' : '启用用户'}</p>
                   <p style={{ fontSize: 14, color: '#64748b', margin: '0 0 12px' }}>确定{modal.user.is_active ? '禁用' : '启用'}用户 <strong>{modal.user.username}</strong> 吗？</p>
+                  {error && <p style={{ fontSize: 13, color: '#dc2626', margin: '0 0 8px', textAlign: 'center' }}>{error}</p>}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 20 }}>
                     <button onClick={closeModal} disabled={acting}
                       style={{ padding: '8px 20px', fontSize: 14, color: '#64748b', fontWeight: 500, borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>取消</button>
@@ -214,11 +217,25 @@ export default function UserManage() {
                 <>
                   <p style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', margin: '0 0 8px' }}>变更角色</p>
                   <p style={{ fontSize: 14, color: '#64748b', margin: '0 0 12px' }}>将用户 <strong>{modal.user.username}</strong> 的角色从「{ROLE_LABELS[modal.user.role]}」变更为：</p>
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                    {['student', 'teacher'].map((r) => (
+                      <label key={r} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, color: '#475569', cursor: 'pointer' }}>
+                        <input type="radio" name="role" value={r} checked={newRole === r}
+                          onChange={() => setNewRole(r)}
+                          style={{ accentColor: '#6366F1' }} />
+                        {ROLE_LABELS[r]}
+                      </label>
+                    ))}
+                  </div>
+                  {error && <p style={{ fontSize: 13, color: '#dc2626', margin: '0 0 8px', textAlign: 'center' }}>{error}</p>}
                   <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
                     <button onClick={closeModal} disabled={acting}
                       style={{ padding: '8px 20px', fontSize: 14, color: '#64748b', fontWeight: 500, borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>取消</button>
+                    <button onClick={doAction} disabled={acting}
+                      style={{ padding: '8px 20px', fontSize: 14, fontWeight: 600, borderRadius: 8, border: 'none', cursor: 'pointer', color: '#fff', background: '#6366F1' }}>
+                      {acting ? '处理中...' : '确认变更'}
+                    </button>
                   </div>
-                  <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 12, textAlign: 'center' }}>提示：角色变更功能需要后端 API 支持，当前暂未实现</p>
                 </>
               )}
             </div>
