@@ -122,8 +122,7 @@ async def ask_question(
                         yield f"event: retrieve\ndata: {json.dumps({'source': 'web', 'has_results': has_web})}\n\n"
 
                     elif node_name == "generate_answer":
-                        answer = node_output.get("answer", "")
-                        yield f"event: generate\ndata: {json.dumps({'length': len(answer)})}\n\n"
+                        yield f"event: generate\ndata: {json.dumps({})}\n\n"
 
                     elif node_name == "review_output":
                         result = node_output.get("review_result", "PASS")
@@ -164,10 +163,11 @@ async def ask_question(
             await db.refresh(qa_record)
 
             # Send done event
+            is_rejected = state_values.get("is_rejected", False)
             done_data = {
                 "answer": state_values.get("answer", ""),
-                "sources": state_values.get("sources", []),
-                "is_rejected": state_values.get("is_rejected", False),
+                "sources": [] if is_rejected else state_values.get("sources", []),
+                "is_rejected": is_rejected,
                 "rejection_reason": state_values.get("rejection_reason", ""),
                 "id": qa_record.id,
                 "thread_id": thread_id,

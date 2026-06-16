@@ -55,6 +55,11 @@ async def review_output(state: RAGState) -> dict:
     search_mode = state.get("search_mode", "internal")
     question = state.get("question", "")
 
+    # Fallback answer (LLM own knowledge, no sources to verify) → PASS
+    if not sources:
+        logger.info("No sources (fallback answer), auto-passing review")
+        return {"review_result": "PASS", "matched_sources": []}
+
     # Phase 1: Mechanical check
     reject_reason = _mechanical_check(answer, sources, search_mode)
     if reject_reason:

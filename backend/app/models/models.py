@@ -158,8 +158,6 @@ class QAHistory(Base):
 
     user = relationship("User", back_populates="qa_histories")
     course = relationship("Course", back_populates="qa_histories")
-    feedbacks = relationship("Feedback", back_populates="qa_history")
-
     def __repr__(self):
         return f"<QAHistory(id={self.id}, user_id={self.user_id})>"
 
@@ -173,14 +171,14 @@ class Feedback(Base):
     __table_args__ = (UniqueConstraint("qa_id", "user_id", name="uq_feedback_qa_user"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    qa_id: Mapped[int] = mapped_column(Integer, ForeignKey("qa_history.id"), nullable=False)
+    qa_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_sessions.id"), nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     type: Mapped[str] = mapped_column(String(20), nullable=False, comment="useful / useless / error")
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
-    qa_history = relationship("QAHistory", back_populates="feedbacks")
+    session = relationship("UserSession", back_populates="feedbacks")
     user = relationship("User", back_populates="feedbacks")
 
     def __repr__(self):

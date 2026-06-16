@@ -56,12 +56,12 @@ async def classify_intent(state: RAGState) -> dict:
         )
         label = label.upper()
 
-        valid_labels = {"NORMAL", "CHEATING", "SENSITIVE", "ATTACK"}
+        valid_labels = {"NORMAL", "CHITCHAT", "CHEATING", "SENSITIVE", "ATTACK"}
         if label in valid_labels:
             logger.info("Intent classified: %s", label)
             result = {"intent": label}
             if label != "NORMAL":
-                result["rejection_category"] = "intent"
+                result["rejection_category"] = "chitchat" if label == "CHITCHAT" else "intent"
             return result
 
         logger.warning("LLM returned unknown label: '%s', falling back to NORMAL", label)

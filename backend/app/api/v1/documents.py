@@ -25,6 +25,7 @@ from app.schemas.document import (
     DocumentItem,
     DocumentUpdate,
 )
+from app.services.audit import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,8 @@ async def upload_document(
         .options(joinedload(Document.course), joinedload(Document.uploader))
         .where(Document.id == doc.id)
     )
+
+    await log_action(db, user.id, "upload_doc", {"doc_id": doc.id, "title": title})
 
     return APIResponse(
         message="上传成功",
@@ -396,8 +399,11 @@ async def delete_document(
         logger.exception("Failed to delete file %s", doc.file_path)
 
     # 删除数据库记录（cascade 自动删除 chunks）
+    doc_title = doc.title
     await db.delete(doc)
     await db.commit()
+
+    await log_action(db, user.id, "delete_doc", {"doc_id": document_id, "title": doc_title})
 
     return APIResponse(message="删除成功")
 
@@ -436,6 +442,10 @@ async def approve_document(
 
     await db.commit()
     await db.refresh(doc, attribute_names=["course", "uploader"])
+
+    await log_action(db, user.id, "approve_doc", {
+        "doc_id": document_id, "title": doc.title, "status": body.status,
+    })
 
     return APIResponse(
         message="审核完成",

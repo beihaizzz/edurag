@@ -37,6 +37,7 @@ class UserSession(Base):
     # relationships
     user = relationship("User", back_populates="user_sessions")
     course = relationship("Course", back_populates="user_sessions")
+    feedbacks = relationship("Feedback", back_populates="session")
 
     def __repr__(self):
         return f"<UserSession(id={self.id}, thread_id={self.thread_id}, user_id={self.user_id})>"

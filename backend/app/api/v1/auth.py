@@ -16,6 +16,7 @@ from app.core.security import (
 )
 from app.deps import get_current_user
 from app.models import User
+from app.services.audit import log_action
 from app.schemas.common import APIResponse
 from app.schemas.user import (
     ChangePasswordRequest,
@@ -74,6 +75,8 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     # 生成 tokens
     access_token = create_access_token(data={"sub": str(user.id), "role": user.role})
     refresh_token = create_refresh_token(data={"sub": str(user.id), "role": user.role})
+
+    await log_action(db, user.id, "login")
 
     return APIResponse(
         data={

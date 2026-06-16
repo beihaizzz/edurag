@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class FeedbackCreate(BaseModel):
@@ -17,7 +17,11 @@ class FeedbackItem(BaseModel):
     id: int
     qa_id: int
     type: str
-    comment: str
+    comment: str | None = None
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, v: datetime | None) -> str | None:
+        return v.isoformat() if v else None

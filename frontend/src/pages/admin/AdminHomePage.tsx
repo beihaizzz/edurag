@@ -104,7 +104,7 @@ export default function AdminHomePage() {
                   <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
-              <div
+              <div onClick={() => navigate('/admin/audit-logs')}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', cursor: 'pointer', transition: 'background 0.2s' }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc' }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>

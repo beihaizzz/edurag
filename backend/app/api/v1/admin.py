@@ -4,14 +4,15 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel  # noqa: F811
-from sqlalchemy import Date, Integer, cast, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import hash_password
 from app.deps import require_role
-from app.models import AuditLog, Course, Document, Feedback, QAHistory, User
+from app.models import AuditLog, Course, Document, QAHistory, User
 from app.schemas.common import APIResponse, PaginatedData
+from app.services.audit import log_action
 
 router = APIRouter(prefix="", tags=["admin"])
 
@@ -162,6 +163,124 @@ async def admin_list_users(
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Batch 请求模型
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class BatchUserIdsRequest(BaseModel):
+    user_ids: list[int]
+
+
+class BatchRoleRequest(BaseModel):
+    user_ids: list[int]
+    role: str
+
+
+class BatchStatusRequest(BaseModel):
+    user_ids: list[int]
+    is_active: bool
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PUT /admin/users/batch/role
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.put("/admin/users/batch/role")
+async def admin_batch_change_role(
+    body: BatchRoleRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """批量修改用户角色"""
+    if body.role not in VALID_ROLES:
+        return APIResponse(code=40001, message=f"无效的角色: {body.role}")
+    if not body.user_ids:
+        return APIResponse(code=40003, message="用户列表不能为空")
+    if _user.id in body.user_ids:
+        return APIResponse(code=40002, message="不能修改自己的角色")
+
+    await db.execute(
+        update(User).where(User.id.in_(body.user_ids)).values(role=body.role)
+    )
+    await db.commit()
+
+    await log_action(db, _user.id, "batch_change_role", {
+        "user_ids": body.user_ids, "role": body.role,
+    })
+
+    return APIResponse(
+        message=f"已将 {len(body.user_ids)} 个用户的角色变更为 {body.role}",
+        data={"affected": len(body.user_ids)},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PUT /admin/users/batch/status
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.put("/admin/users/batch/status")
+async def admin_batch_change_status(
+    body: BatchStatusRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """批量启用/禁用用户"""
+    if not body.user_ids:
+        return APIResponse(code=40003, message="用户列表不能为空")
+    if _user.id in body.user_ids:
+        return APIResponse(code=40002, message="不能修改自己的状态")
+
+    await db.execute(
+        update(User).where(User.id.in_(body.user_ids)).values(is_active=body.is_active)
+    )
+    await db.commit()
+
+    await log_action(db, _user.id, "batch_toggle_user", {
+        "user_ids": body.user_ids, "is_active": body.is_active,
+    })
+
+    action = "启用" if body.is_active else "禁用"
+    return APIResponse(
+        message=f"已{action} {len(body.user_ids)} 个用户",
+        data={"affected": len(body.user_ids)},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# POST /admin/users/batch/reset-password
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.post("/admin/users/batch/reset-password")
+async def admin_batch_reset_password(
+    body: BatchUserIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """批量重置用户密码"""
+    if not body.user_ids:
+        return APIResponse(code=40003, message="用户列表不能为空")
+
+    await db.execute(
+        update(User)
+        .where(User.id.in_(body.user_ids))
+        .values(password_hash=hash_password(RESET_PASSWORD), force_password_change=True)
+    )
+    await db.commit()
+
+    await log_action(db, _user.id, "batch_reset_password", {
+        "user_ids": body.user_ids,
+    })
+
+    return APIResponse(
+        message=f"已重置 {len(body.user_ids)} 个用户的密码为 {RESET_PASSWORD}",
+        data={"affected": len(body.user_ids)},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # PUT /admin/users/{id}/disable
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -180,6 +299,10 @@ async def admin_disable_user(
     target.is_active = not target.is_active
     await db.commit()
 
+    await log_action(db, _user.id, "toggle_user", {
+        "user_id": user_id, "username": target.username, "is_active": target.is_active,
+    })
+
     return APIResponse(
         message=f"用户已{'启用' if target.is_active else '禁用'}",
         data={"user_id": user_id, "is_active": target.is_active},
@@ -191,38 +314,43 @@ async def admin_disable_user(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-class _UpdateRoleRequest(BaseModel):
-    """更新用户角色请求体"""
+class RoleChangeRequest(BaseModel):
     role: str
 
 
+VALID_ROLES = {"student", "teacher", "admin"}
+
+
 @router.put("/admin/users/{user_id}/role")
-async def admin_update_user_role(
+async def admin_change_role(
     user_id: int,
-    body: _UpdateRoleRequest,
+    body: RoleChangeRequest,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_role("admin")),
 ):
-    """管理员修改用户角色（student ↔ teacher，不可设为 admin）"""
-    if body.role not in {"student", "teacher"}:
-        return APIResponse(code=400, message="角色值无效，仅支持 student/teacher")
-
-    if user_id == _user.id:
-        return APIResponse(code=403, message="不能修改自己的角色")
+    """修改用户角色"""
+    if body.role not in VALID_ROLES:
+        return APIResponse(code=40001, message=f"无效的角色: {body.role}")
 
     target = await db.get(User, user_id)
     if not target:
         return APIResponse(code=40401, message="用户不存在")
 
-    if target.role == "admin":
-        return APIResponse(code=403, message="不能修改管理员角色")
+    if target.id == _user.id:
+        return APIResponse(code=40002, message="不能修改自己的角色")
 
+    old_role = target.role
     target.role = body.role
     await db.commit()
 
+    await log_action(db, _user.id, "change_role", {
+        "user_id": user_id, "username": target.username,
+        "old_role": old_role, "new_role": body.role,
+    })
+
     return APIResponse(
-        message="角色已更新",
-        data={"user_id": user_id, "new_role": target.role},
+        message=f"角色已从 {old_role} 变更为 {body.role}",
+        data={"user_id": user_id, "old_role": old_role, "new_role": body.role},
     )
 
 
@@ -231,27 +359,31 @@ async def admin_update_user_role(
 # ═══════════════════════════════════════════════════════════════════════
 
 
+RESET_PASSWORD = "123456"
+
+
 @router.post("/admin/users/{user_id}/reset-password")
 async def admin_reset_password(
     user_id: int,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_role("admin")),
 ):
-    """管理员重置用户密码（生成 8 位临时密码）"""
-    import secrets
-
+    """管理员重置用户密码为固定密码"""
     target = await db.get(User, user_id)
     if not target:
         return APIResponse(code=40401, message="用户不存在")
 
-    temp_password = secrets.token_urlsafe(6)[:8]
-    target.password_hash = hash_password(temp_password)
+    target.password_hash = hash_password(RESET_PASSWORD)
     target.force_password_change = True
     await db.commit()
 
+    await log_action(db, _user.id, "reset_password", {
+        "user_id": user_id, "username": target.username,
+    })
+
     return APIResponse(
-        message="密码已重置",
-        data={"user_id": user_id, "temp_password": temp_password},
+        message=f"密码已重置为 {RESET_PASSWORD}",
+        data={"user_id": user_id, "temp_password": RESET_PASSWORD},
     )
 
 
@@ -289,9 +421,7 @@ async def admin_list_audit_logs(
                         "id": l.id,
                         "user_id": l.user_id,
                         "action": l.action,
-                        "target_type": l.target_type,
-                        "target_id": l.target_id,
-                        "details": l.details,
+                        "detail": l.detail,
                         "ip_address": l.ip_address,
                         "created_at": l.created_at.isoformat() if l.created_at else None,
                     }
@@ -307,227 +437,3 @@ async def admin_list_audit_logs(
         return APIResponse(
             data=PaginatedData(items=[], total=0, page=page, page_size=page_size, total_pages=0).model_dump()
         )
-
-# ═══════════════════════════════════════════════════════════════════════
-# GET /admin/qa/stats
-# ═══════════════════════════════════════════════════════════════════════
-
-
-@router.get("/admin/qa/stats")
-async def admin_qa_stats(
-    course_id: int | None = Query(None),
-    days: int = Query(30, ge=1, le=365),
-    limit: int = Query(20, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_role("admin")),
-):
-    """教师数据洞察 — 高频问题 Top-N + 知识盲区统计 + QA 趋势 + 反馈汇总"""
-    def _course_filter(stmt):
-        if course_id:
-            return stmt.where(QAHistory.course_id == course_id)
-        return stmt
-
-    # ── 1. Summary ──
-    total_qa_q = _course_filter(select(func.count()).select_from(QAHistory))
-    total_qa = (await db.execute(total_qa_q)).scalar() or 0
-
-    today_qa_q = _course_filter(
-        select(func.count()).select_from(QAHistory).where(
-            func.date(QAHistory.created_at) == func.current_date()
-        )
-    )
-    today_qa = (await db.execute(today_qa_q)).scalar() or 0
-
-    rejected_q = _course_filter(
-        select(func.count()).select_from(QAHistory).where(QAHistory.is_rejected == True)
-    )
-    rejected_count = (await db.execute(rejected_q)).scalar() or 0
-    rejection_rate = round(rejected_count / total_qa, 4) if total_qa else 0
-
-    avg_latency_q = _course_filter(select(func.avg(QAHistory.latency_ms)).select_from(QAHistory))
-    avg_latency = (await db.execute(avg_latency_q)).scalar()
-    avg_latency_ms = round(avg_latency) if avg_latency else 0
-
-    # ── 2. By Course ──
-    qa_by_course_q = _course_filter(
-        select(QAHistory.course_id, func.count().label("count"))
-        .where(QAHistory.course_id.isnot(None))
-        .group_by(QAHistory.course_id)
-        .order_by(func.count().desc())
-    )
-    course_counts = (await db.execute(qa_by_course_q)).all()
-    course_ids = [row.course_id for row in course_counts]
-    courses_map = {}
-    if course_ids:
-        courses_result = await db.execute(
-            select(Course.id, Course.name).where(Course.id.in_(course_ids))
-        )
-        for cid, cname in courses_result:
-            courses_map[cid] = cname
-    qa_by_course = [
-        {"course_id": row.course_id, "course_name": courses_map.get(row.course_id, "未知"),
-         "count": row.count}
-        for row in course_counts
-    ]
-
-    # ── 3. Trend (daily) ──
-    trend_q = _course_filter(
-        select(
-            cast(QAHistory.created_at, Date).label("date"),
-            func.count().label("count"),
-            func.sum(cast(QAHistory.is_rejected, Integer)).label("rejected"),
-        )
-        .where(QAHistory.created_at >= func.current_date() - func.make_interval(0, 0, 0, days))
-        .group_by(cast(QAHistory.created_at, Date))
-        .order_by(cast(QAHistory.created_at, Date))
-    )
-    trend_rows = (await db.execute(trend_q)).all()
-    qa_trend = [
-        {"date": str(row.date), "count": row.count, "rejected": row.rejected or 0}
-        for row in trend_rows
-    ]
-
-    # ── 4. High-frequency questions ──
-    hf_q = _course_filter(
-        select(QAHistory.question, QAHistory.course_id,
-               func.count().label("count"),
-               func.max(QAHistory.created_at).label("last_asked"))
-        .group_by(QAHistory.question, QAHistory.course_id)
-        .order_by(func.count().desc())
-        .limit(limit)
-    )
-    hf_rows = (await db.execute(hf_q)).all()
-    high_freq_questions = [
-        {
-            "question": row.question,
-            "count": row.count,
-            "course_name": courses_map.get(row.course_id, "未知"),
-            "last_asked_at": row.last_asked.isoformat() if row.last_asked else None,
-        }
-        for row in hf_rows
-    ]
-
-    # ── 5. Blind spots (rejected questions) ──
-    bs_q = _course_filter(
-        select(QAHistory.question, QAHistory.course_id,
-               func.count().label("count"),
-               func.max(QAHistory.created_at).label("last_asked"))
-        .where(QAHistory.is_rejected == True)
-        .group_by(QAHistory.question, QAHistory.course_id)
-        .order_by(func.count().desc())
-        .limit(limit)
-    )
-    bs_rows = (await db.execute(bs_q)).all()
-    blind_spots = [
-        {
-            "question": row.question,
-            "count": row.count,
-            "course_name": courses_map.get(row.course_id, "未知"),
-            "last_asked_at": row.last_asked.isoformat() if row.last_asked else None,
-        }
-        for row in bs_rows
-    ]
-
-    # ── 6. Feedback summary ──
-    fb_q = select(Feedback.type, func.count().label("count")).group_by(Feedback.type)
-    fb_rows = (await db.execute(fb_q)).all()
-    feedback_summary = {"useful": 0, "useless": 0, "error": 0, "total": 0}
-    for row in fb_rows:
-        if row.type in feedback_summary:
-            feedback_summary[row.type] = row.count
-    feedback_summary["total"] = sum(v for k, v in feedback_summary.items() if k != "total")
-
-    return APIResponse(
-        data={
-            "summary": {
-                "total_qa": total_qa,
-                "today_qa": today_qa,
-                "rejected_count": rejected_count,
-                "rejection_rate": rejection_rate,
-                "avg_latency_ms": avg_latency_ms,
-            },
-            "qa_by_course": qa_by_course,
-            "qa_trend": qa_trend,
-            "high_freq_questions": high_freq_questions,
-            "blind_spots": blind_spots,
-            "feedback_summary": feedback_summary,
-        }
-    )
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# GET /admin/logs
-# ═══════════════════════════════════════════════════════════════════════
-
-
-@router.get("/admin/logs")
-async def admin_list_logs(
-    action: str | None = Query(None, description="按操作类型筛选，如 document.approve"),
-    user_id: int | None = Query(None, description="按用户 ID 筛选"),
-    date_from: str | None = Query(None, alias="date_from", description="起始日期 YYYY-MM-DD"),
-    date_to: str | None = Query(None, alias="date_to", description="结束日期 YYYY-MM-DD"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_role("admin")),
-):
-    """系统操作日志列表 — 支持按操作类型/用户/日期范围筛选"""
-    from sqlalchemy.orm import aliased
-    from app.models import User as UserModel
-
-    # ── Base query ──
-    base = select(AuditLog)
-
-    # ── Dynamic WHERE ──
-    conditions = []
-    if action:
-        conditions.append(AuditLog.action == action)
-    if user_id:
-        conditions.append(AuditLog.user_id == user_id)
-    if date_from:
-        conditions.append(AuditLog.created_at >= date_from)
-    if date_to:
-        end_date = date_to
-        if "T" not in date_to:
-            end_date = date_to + "T23:59:59"
-        conditions.append(AuditLog.created_at <= end_date)
-    if conditions:
-        base = base.where(*conditions)
-
-    # ── Total count ──
-    count_q = select(func.count()).select_from(base.subquery())
-    total = (await db.execute(count_q)).scalar() or 0
-    total_pages = max(1, (total + page_size - 1) // page_size)
-
-    # ── Paginated query with user join ──
-    user_alias = aliased(UserModel)
-    q = (
-        select(AuditLog, user_alias.username)
-        .join(user_alias, AuditLog.user_id == user_alias.id, isouter=True)
-    )
-    if conditions:
-        q = q.where(*conditions)
-    q = q.order_by(AuditLog.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(q)
-    rows = result.all()
-
-    return APIResponse(
-        data=PaginatedData(
-            items=[
-                {
-                    "id": row[0].id,
-                    "user_id": row[0].user_id,
-                    "username": row[1],
-                    "action": row[0].action,
-                    "detail": row[0].detail,
-                    "ip_address": row[0].ip_address,
-                    "created_at": row[0].created_at.isoformat() if row[0].created_at else None,
-                }
-                for row in rows
-            ],
-            total=total,
-            page=page,
-            page_size=page_size,
-            total_pages=total_pages,
-        ).model_dump()
-    )

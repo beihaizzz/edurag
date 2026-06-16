@@ -1,0 +1,25 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - img "EduRAG" [ref=e7]
+    - generic [ref=e8]: EduRAG
+    - generic [ref=e9]: 校园课程资料智能搜索与问答服务系统
+  - generic [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]: 学号 / 工号
+      - generic [ref=e13]:
+        - generic:
+          - img
+        - textbox "请输入学号或工号" [ref=e14]
+    - generic [ref=e15]:
+      - generic [ref=e16]: 密码
+      - generic [ref=e17]:
+        - generic:
+          - img
+        - textbox "请输入密码" [ref=e18]
+        - button "显示密码" [ref=e19] [cursor=pointer]:
+          - img [ref=e20]
+    - button "登 录" [ref=e25] [cursor=pointer]
+  - generic [ref=e26]:
+    - text: 还没有账号？
+    - link "立即注册" [ref=e27] [cursor=pointer]:
+      - /url: /register
