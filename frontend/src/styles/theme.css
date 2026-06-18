@@ -1,0 +1,66 @@
+:root {
+  --seal-ink: #123a5a;
+  --seal-navy: #071827;
+  --seal-blue: #2f80b7;
+  --seal-sky: #6fb6dc;
+  --seal-ice: #e8f5fb;
+  --seal-paper: #f8fcff;
+  --seal-border: #cfe7f4;
+  --seal-muted: #66869b;
+  --seal-primary: #2f80b7;
+  --seal-primary-hover: #236b9d;
+  --seal-shadow: 0 16px 44px rgba(18, 58, 90, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #123a5a;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(111, 182, 220, 0.22), transparent 28rem),
+    linear-gradient(180deg, #f8fcff 0%, #eef8fd 52%, #ffffff 100%);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  color: #ffffff;
+  background: var(--seal-primary);
+}
+
+.seal-brand-mark {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(47, 128, 183, 0.18);
+}
+
+.seal-page-shell {
+  background:
+    radial-gradient(circle at 8% 8%, rgba(111, 182, 220, 0.18), transparent 24rem),
+    linear-gradient(180deg, #f8fcff 0%, #eef8fd 100%);
+}
+
+.seal-card {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--seal-border);
+  box-shadow: var(--seal-shadow);
+}

@@ -328,11 +328,13 @@ export default function RegisterPage() {
   const passwordRef = useRef<HTMLInputElement>(null)
 
   /* ── Validation ── */
-  function clearField(field: string) {
+  type RegisterField = 'username' | 'password' | 'confirmPw'
+
+  function clearField(field: RegisterField) {
     setErrors((prev) => ({ ...prev, [field]: undefined }))
   }
 
-  function setFieldError(field: string, msg: string) {
+  function setFieldError(field: RegisterField, msg: string) {
     setErrors((prev) => ({ ...prev, [field]: msg }))
     setShakeField(field)
     setTimeout(() => setShakeField(null), 400)
@@ -409,7 +411,7 @@ export default function RegisterPage() {
   }
 
   /* ── Dynamic input style ── */
-  const getInputStyle = (field: string): CSSProperties => ({
+  const getInputStyle = (field: RegisterField): CSSProperties => ({
     ...styles.inputWrapper,
     borderColor: errors[field] ? '#fca5a5' : '#e2e8f0',
     boxShadow: errors[field] ? '0 0 0 3px rgba(239,68,68,0.1)' : undefined,
@@ -472,7 +474,7 @@ export default function RegisterPage() {
         >
           <div style={styles.brandOverlay} />
           <div style={styles.brandContent}>
-            <img src="/favicon.svg" alt="EduRAG" style={styles.logo} />
+            <img src="/seal-logo-transparent.png" alt="EduRAG" style={styles.logo} />
             <div style={styles.brandName}>EduRAG</div>
             <div style={styles.slogan}>
               知识不在于拥有答案，<br />而在于提出正确的问题。
@@ -487,7 +489,7 @@ export default function RegisterPage() {
 
             {/* Mobile Brand */}
             <div className="mobile-brand" style={styles.mobileLogo}>
-              <img src="/favicon.svg" alt="EduRAG" style={styles.mobileLogoImg} />
+              <img src="/seal-logo-transparent.png" alt="EduRAG" style={styles.mobileLogoImg} />
               <div style={styles.mobileLogoText}>EduRAG</div>
               <div style={styles.mobileLogoDesc}>校园课程资料智能搜索与问答服务系统</div>
             </div>

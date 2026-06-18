@@ -13,8 +13,8 @@ const TYPE_LABELS: Record<string, string> = { courseware: '课件', lab_guide: '
 const TYPE_COLORS: Record<string, string> = { courseware: '#3b82f6', lab_guide: '#06b6d4', assignment: '#f97316', reference: '#8b5cf6', other: '#64748b' }
 const STATUS_LABELS: Record<string, string> = { pending: '待审核', approved: '已通过', rejected: '已驳回' }
 const STATUS_COLORS: Record<string, string> = { pending: '#f59e0b', approved: '#10b981', rejected: '#ef4444' }
-const PROC_LABELS: Record<string, string> = { pending: '待处理', processing: '处理中', completed: '已完成', failed: '失败' }
-const PROC_COLORS: Record<string, string> = { pending: '#94a3b8', processing: '#3b82f6', completed: '#10b981', failed: '#ef4444' }
+export const PROC_LABELS: Record<string, string> = { pending: '待处理', processing: '处理中', completed: '已完成', failed: '失败' }
+export const PROC_COLORS: Record<string, string> = { pending: '#94a3b8', processing: '#3b82f6', completed: '#10b981', failed: '#ef4444' }
 
 function fmtSize(bytes: number) { return (bytes / 1024 / 1024).toFixed(1) + ' MB' }
 

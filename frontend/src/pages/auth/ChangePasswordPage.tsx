@@ -1,4 +1,4 @@
-import { useState, useRef, type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 
@@ -260,7 +260,7 @@ export default function ChangePasswordPage() {
         <div className="brand-panel" style={{ ...styles.brandPanel, background: "url('/dljmfm.png') center/cover no-repeat" }}>
           <div style={styles.brandOverlay} />
           <div style={styles.brandContent}>
-            <img src="/favicon.svg" alt="EduRAG" style={styles.logo} />
+            <img src="/seal-logo-transparent.png" alt="EduRAG" style={styles.logo} />
             <div style={styles.brandName}>EduRAG</div>
             <div style={styles.slogan}>保护你的账户安全，<br />从这里开始。</div>
             <div style={styles.brandDesc}>{descText}</div>
@@ -273,7 +273,7 @@ export default function ChangePasswordPage() {
 
             {/* Mobile Brand */}
             <div className="mobile-brand" style={styles.mobileLogo}>
-              <img src="/favicon.svg" alt="EduRAG" style={styles.mobileLogoImg} />
+              <img src="/seal-logo-transparent.png" alt="EduRAG" style={styles.mobileLogoImg} />
               <div style={styles.mobileLogoText}>EduRAG</div>
               <div style={styles.mobileLogoDesc}>{descText}</div>
             </div>
