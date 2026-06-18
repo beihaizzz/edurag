@@ -447,6 +447,10 @@ async def approve_document(
         "doc_id": document_id, "title": doc.title, "status": body.status,
     })
 
+    await log_action(db, user.id, "approve_doc", {
+        "doc_id": document_id, "title": doc.title, "status": body.status,
+    })
+
     return APIResponse(
         message="审核完成",
         data=DocumentDetail.model_validate(doc).model_dump(mode="json"),
