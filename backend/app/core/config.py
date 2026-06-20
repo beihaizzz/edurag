@@ -45,6 +45,10 @@ class Settings(BaseSettings):
 
     # ── RAG 参数 ─────────────────────────────
     RAG_SIMILARITY_THRESHOLD: float = 0.45
+    # 粗筛阈值：rag_search 召回阶段仅去除极端噪音，真正的相关性判定交给 rerank
+    RAG_PREFILTER_THRESHOLD: float = 0.2
+    # 降级阈值：rerank API 挂掉时（fail-open）改用更严格的余弦阈值判定是否有内部资料
+    RAG_FALLBACK_THRESHOLD: float = 0.55
     RAG_TOP_K: int = 10
     RAG_CHUNK_SIZE: int = 800
     RAG_CHUNK_OVERLAP: int = 150
@@ -53,6 +57,8 @@ class Settings(BaseSettings):
     RERANK_ENABLED: bool = True
     RERANK_FETCH_K: int = 20
     RERANK_TOP_K: int = 5
+    # rerank 后的相关性阈值：relevance_score 低于此值视为无内部资料（决定是否走联网/兜底）
+    RERANK_SCORE_THRESHOLD: float = 0.3
     RERANKER_TIMEOUT: float = 10.0
     RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
 

@@ -22,12 +22,12 @@ async def search_tavily(
         return []
 
     try:
-        from tavily import TavilyClient
+        from tavily import AsyncTavilyClient
 
-        client = TavilyClient(api_key=api_key)
+        client = AsyncTavilyClient(api_key=api_key)
 
         async def _do():
-            response = await client.search_async(query=query, max_results=max_results)
+            response = await client.search(query=query, max_results=max_results)
             return response.get("results", [])
 
         results = await asyncio.wait_for(_do(), timeout=timeout)

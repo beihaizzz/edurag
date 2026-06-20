@@ -102,7 +102,12 @@ class VectorStoreService:
 
         for i in range(len(ids_batch)):
             meta = metas_batch[i] if i < len(metas_batch) else {}
+            # ChromaDB may return None for a metadata entry; coerce to empty dict
+            if meta is None:
+                meta = {}
             content = docs_batch[i] if i < len(docs_batch) else ""
+            if content is None:
+                content = ""
             # ChromaDB cosine distance ∈ [0, 2] → 1 − distance = cosine similarity
             distance = dists_batch[i] if i < len(dists_batch) else 0.0
             score = 1.0 - distance if distance <= 2.0 else 1.0 / (1.0 + distance)

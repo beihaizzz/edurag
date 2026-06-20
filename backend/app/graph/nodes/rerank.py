@@ -30,6 +30,7 @@ async def rerank(state: RAGState) -> dict:
     if not internal_results or not question:
         return {
             "internal_results": internal_results,
+            "has_internal_results": bool(internal_results),
             "reranked": False,
             "input_count": len(internal_results),
             "output_count": len(internal_results),
@@ -41,29 +42,55 @@ async def rerank(state: RAGState) -> dict:
 
         results = await reranker_service.rerank(question, documents, top_n=top_n)
 
-        # Map results[].index → internal_results[idx], set score
+        # Map results[].index → internal_results[idx], set relevance score, and
+        # keep only chunks whose cross-encoder relevance clears the threshold.
+        # The cross-encoder score is far more reliable than cosine, so it — not
+        # the loose cosine prefilter — is what decides "do we have real material?".
+        threshold = settings.RERANK_SCORE_THRESHOLD
         reranked = []
         for rr in results:
             idx = rr["index"]
             if 0 <= idx < len(internal_results):
+                score = rr.get("relevance_score", 0)
+                if score < threshold:
+                    continue
                 item = dict(internal_results[idx])
-                item["score"] = rr.get("relevance_score", item.get("score", 0))
+                item["score"] = score
                 reranked.append(item)
 
-        logger.info("Reranker: %d → %d results", len(internal_results), len(reranked))
+        has_results = len(reranked) > 0
+        logger.info(
+            "Reranker: %d → %d results (relevance>=%.2f, has_results=%s)",
+            len(internal_results), len(reranked), threshold, has_results,
+        )
 
         return {
             "internal_results": reranked,
+            "has_internal_results": has_results,
             "reranked": True,
             "input_count": len(internal_results),
             "output_count": len(reranked),
         }
 
     except Exception:
+        # Fail-open: reranker (API) is down. Fall back to cosine ordering, but
+        # apply a STRICTER cosine threshold than the loose prefilter so that
+        # borderline noise does not get treated as real internal material.
         logger.warning("Reranker failed, fallback to cosine ordering", exc_info=True)
+        fallback_threshold = settings.RAG_FALLBACK_THRESHOLD
+        fallback = [
+            r for r in internal_results
+            if r.get("score", 0) >= fallback_threshold
+        ]
+        has_results = len(fallback) > 0
+        logger.info(
+            "Reranker fallback: %d → %d results (cosine>=%.2f, has_results=%s)",
+            len(internal_results), len(fallback), fallback_threshold, has_results,
+        )
         return {
-            "internal_results": internal_results,
+            "internal_results": fallback,
+            "has_internal_results": has_results,
             "reranked": False,
             "input_count": len(internal_results),
-            "output_count": len(internal_results),
+            "output_count": len(fallback),
         }

@@ -65,6 +65,13 @@ data/
 # Backend runtime artifacts
 backend/.startup.*
 
+# Process id / orchestration runtime
+*.pid
+.omo/
+
+# Ad-hoc diagnostic / verification scripts (prefixed with underscore)
+backend/scripts/_*.py
+
 # Course materials (binary files — use Git LFS or cloud storage)
 docs/**/*.pdf
 docs/**/*.ppt

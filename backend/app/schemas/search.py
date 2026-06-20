@@ -45,6 +45,7 @@ class QaCreate(BaseModel):
     course_id: int | None = None
     use_web_search: bool = False
     thread_id: str | None = None  # 续接已有会话
+    regenerate: bool = False  # 重新生成：回滚最后一轮后重答，不新增轮次
 
 
 class QaSource(BaseModel):
