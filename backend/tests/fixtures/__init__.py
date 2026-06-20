@@ -95,7 +95,7 @@ async def create_test_user():
     """
 
     from app.core.security import create_access_token, hash_password
-    from app.models.user import User
+    from app.models import User
 
     async def _create(role="student", username=None, password="Test@123456"):
         if username is None:

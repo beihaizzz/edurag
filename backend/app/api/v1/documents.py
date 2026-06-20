@@ -26,6 +26,10 @@ from app.schemas.document import (
     DocumentUpdate,
 )
 from app.services.audit import log_action
+from app.services.document_processor import (
+    _run_pipeline_background,
+    run_document_pipeline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -436,8 +440,6 @@ async def approve_document(
     doc.auditor_id = user.id
 
     if body.status == "approved":
-        from app.services.document_processor import _run_pipeline_background
-
         background_tasks.add_task(_run_pipeline_background, document_id)
 
     await db.commit()
@@ -474,8 +476,6 @@ async def process_document(
         raise HTTPException(status_code=404, detail="文档不存在")
     if doc.uploader_id != user.id and user.role != "admin":
         raise HTTPException(status_code=403, detail="只能处理自己上传的文档")
-
-    from app.services.document_processor import run_document_pipeline
 
     result = await run_document_pipeline(db, document_id)
     if not result["success"]:

@@ -24,6 +24,11 @@ from app.api.v1.qa import router as qa_router
 from app.api.v1.search import router as search_router
 from app.core.config import settings
 
+# Force docling/torch to initialize on the main thread at startup (before the
+# event loop serves requests). Avoids "torch has no attribute 'backends'" that
+# occurs when docling is first imported lazily inside a request handler.
+import app.services.document_processor  # noqa: E402, F401
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

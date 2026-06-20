@@ -15,30 +15,12 @@ Real DB fixtures (new):
     create_test_user - Factory for real User + JWT token
 """
 
-import sys
-import types
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
+from unittest.mock import AsyncMock, MagicMock
 
-# ══════════════════════════════════════════════════════════════════
-# Model import workaround — prevent double table registration
-# ══════════════════════════════════════════════════════════════════
-#
-# Production code imports models via ``app.models.__init__`` →
-# ``app.models.models`` (a single-file definition).  Individual files
-# (user.py, course.py, …) redundantly define the SAME model classes.
-# Importing any of them would cause SQLAlchemy "Table already defined"
-# errors on the shared MetaData.
-#
-# Strategy: import from the canonical single-file source, then
-# pre-register fake modules so the duplicate files are never loaded.
-# ══════════════════════════════════════════════════════════════════
-
-# 1 ─ Import from the canonical single-file source (table registration once)
-from app.models.models import (  # noqa: E402
+from app.models.models import (
     AuditLog,
     Chunk,
     Course,
@@ -48,43 +30,9 @@ from app.models.models import (  # noqa: E402
     RefreshToken,
     User,
 )
-from app.models.user_session import UserSession  # noqa: E402
+from app.models.user_session import UserSession
 
-# 2 ─ Pre-register fake modules so the individual per-model files
-#     are never loaded (``test_auth.py`` imports ``from app.models.user import User``)
-_MODEL_FILES = (
-    "user",
-    "document",
-    "qa_history",
-    "feedback",
-    "course",
-    "chunk",
-    "audit_log",
-    "refresh_token",
-)
-for _name in _MODEL_FILES:
-    _mod = types.ModuleType(f"app.models.{_name}")
-    sys.modules[f"app.models.{_name}"] = _mod
-
-# 3 ─ Re-export model classes on the fake modules
-sys.modules["app.models.user"].User = User
-sys.modules["app.models.document"].Document = Document
-sys.modules["app.models.qa_history"].QAHistory = QAHistory
-sys.modules["app.models.feedback"].Feedback = Feedback
-sys.modules["app.models.course"].Course = Course
-sys.modules["app.models.chunk"].Chunk = Chunk
-sys.modules["app.models.audit_log"].AuditLog = AuditLog
-sys.modules["app.models.refresh_token"].RefreshToken = RefreshToken
-
-# 4 ─ APIResponse workaround: auth.py imports it from app.schemas.user
-#     but it is actually defined in app.schemas.common.
-import app.schemas.user as _user_schemas  # noqa: E402
-from app.schemas.common import APIResponse as _APIResponse  # noqa: E402
-
-_user_schemas.APIResponse = _APIResponse
-
-# 5 ─ Now safe to import the FastAPI app
-from main import app  # noqa: E402
+from main import app
 
 # ══════════════════════════════════════════════════════════════════
 # Real-DB fixtures (pytest-asyncio, auto mode)

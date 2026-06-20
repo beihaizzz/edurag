@@ -1,6 +1,6 @@
 import asyncio
 from app.core.database import AsyncSessionLocal
-from app.models.user import User
+from app.models import User
 from app.core.security import hash_password, verify_password
 from sqlalchemy import select
 

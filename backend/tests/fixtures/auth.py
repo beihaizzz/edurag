@@ -39,7 +39,7 @@ async def _create_user_and_token(*, role, username, password="pass123", is_activ
     record is visible to ``async_client``'s ``test_db`` session.
     """
     from app.core.security import create_access_token, hash_password
-    from app.models.user import User
+    from app.models import User
 
     user = User(
         username=username,
@@ -160,7 +160,7 @@ async def refresh_token_str():
     visible to the ``async_client``'s ``test_db`` session.
     """
     from app.core.security import create_refresh_token, hash_password
-    from app.models.user import User
+    from app.models import User
 
     username = _unique_username("test_student2")
     user = User(

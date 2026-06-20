@@ -2,7 +2,7 @@
 import asyncio
 from sqlalchemy import text, select
 from app.core.database import engine, AsyncSessionLocal
-from app.models.user import User
+from app.models import User
 
 
 async def check():

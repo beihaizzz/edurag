@@ -66,8 +66,7 @@ async def init_test_data(test_db):
             course = init_test_data["course"]
     """
     from app.core.security import hash_password
-    from app.models.course import Course
-    from app.models.user import User
+    from app.models import Course, User
 
     admin = User(
         username="admin001",

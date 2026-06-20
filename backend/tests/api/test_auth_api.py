@@ -116,7 +116,7 @@ async def test_login_disabled_user(async_client):
     """Disabled account (is_active=False) → 200, code=40003."""
     from app.core.database import AsyncSessionLocal
     from app.core.security import hash_password
-    from app.models.user import User
+    from app.models import User
 
     username = f"dis_{uuid.uuid4().hex[:8]}"
     password = "Disabled@123"
@@ -305,7 +305,7 @@ async def test_reset_password_force(async_client):
     """User with force_password_change=True → 200, resets password without old."""
     from app.core.database import AsyncSessionLocal
     from app.core.security import create_access_token, hash_password
-    from app.models.user import User
+    from app.models import User
 
     username = f"frc_{uuid.uuid4().hex[:8]}"
     password = "Force@123"

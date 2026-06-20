@@ -18,6 +18,14 @@ dependencies = [
     "python-multipart>=0.0.9",
     "chromadb>=0.5.0",
     "docling>=2.0.0",
+    # docling 的深度学习依赖（PDF/DOCX/PPTX 解析与版面模型必需）。
+    # torch 必须用 CPU 版，见下方 [tool.uv.sources]，否则默认源会拉取
+    # 体积巨大的 CUDA 包。曾因 torch 安装残缺导致 docling 导入崩溃、
+    # 文档审核接口 500，故在此显式固化。
+    "torch>=2.2.0",
+    "torchvision>=0.17.0",
+    "transformers>=4.42.0,<6.0.0",
+    "accelerate>=1.2.1",
     "langchain>=0.2.0",
     "langchain-deepseek>=0.1.0",
     "langchain-text-splitters>=0.2.0",
@@ -60,3 +68,14 @@ dev-dependencies = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.0",
 ]
+
+# torch / torchvision 强制使用 PyTorch 官方 CPU 轮子源，
+# 避免默认 PyPI 拉取携带 CUDA 的大体积包。
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

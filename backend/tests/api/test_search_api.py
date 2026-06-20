@@ -426,7 +426,7 @@ class TestSearchCourseFilter:
         self, async_client, student_token, admin_token, tmp_path, create_test_user, test_db
     ):
         """Search with course_id=X → only documents belonging to course X appear."""
-        from app.models.course import Course
+        from app.models import Course
 
         # 1. Create a teacher (committed to real DB by factory)
         teacher_user, _teacher_token = await create_test_user(role="teacher")
