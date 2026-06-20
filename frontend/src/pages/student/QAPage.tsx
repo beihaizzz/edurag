@@ -8,7 +8,7 @@ interface SessionItem {
   course_id: number | null; created_at: string | null; updated_at: string | null
 }
 
-interface SourceItem { chunk_id: number; document_id: number; title: string; score: number }
+interface SourceItem { chunk_id?: number; document_id?: number; title: string; score: number; url?: string }
 interface ChatMessage { role: 'user' | 'assistant'; content: string; sources?: SourceItem[] | null; isRejected?: boolean; rejectionReason?: string; progress?: string }
 
 interface SessionDetail {
@@ -45,7 +45,7 @@ function renderMarkdown(text: string): React.ReactNode[] {
       flushList(); inList = false
       result.push(
         <blockquote key={result.length} style={{
-          borderLeft: '3px solid #818CF8', background: 'rgba(238,242,255,0.5)', borderRadius: '0 8px 8px 0',
+          borderLeft: '3px solid var(--seal-sky)', background: 'rgba(238,242,255,0.5)', borderRadius: '0 8px 8px 0',
           padding: '12px 16px', margin: '12px 0', fontSize: 13, color: '#475569',
         }}>
           {line.replace(/^> /, '')}
@@ -56,7 +56,7 @@ function renderMarkdown(text: string): React.ReactNode[] {
       const m = line.match(/^(\d+)\.\s(.+)/)!
       result.push(
         <div key={result.length} style={{ display: 'flex', gap: 10, marginBottom: 4 }}>
-          <span style={{ width: 20, height: 20, borderRadius: '50%', background: '#EEF2FF', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{m[1]}</span>
+          <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--seal-ice)', color: 'var(--seal-primary-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{m[1]}</span>
           <span style={{ fontSize: 14, color: '#334155' }}>{renderInline(m[2])}</span>
         </div>
       )
@@ -80,7 +80,7 @@ function renderInline(text: string): React.ReactNode {
       return (
         <span key={i} style={{
           fontSize: 11, padding: '1px 6px', borderRadius: 4, fontWeight: 500,
-          background: '#EEF2FF', color: '#4F46E5', marginLeft: 4,
+          background: 'var(--seal-ice)', color: 'var(--seal-primary-hover)', marginLeft: 4,
         }}>{p}</span>
       )
     }
@@ -122,10 +122,12 @@ export default function QAPage() {
   const [previewFileUrl, setPreviewFileUrl] = useState<string | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [lastQuestion, setLastQuestion] = useState('') // for regenerate
+  const [useWebSearch, setUseWebSearch] = useState(false)
   const [feedbackModal, setFeedbackModal] = useState(false)
   const [feedbackType, setFeedbackType] = useState('')
   const [feedbackComment, setFeedbackComment] = useState('')
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
+  const [feedbackError, setFeedbackError] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -136,7 +138,7 @@ export default function QAPage() {
       if (r.data.code === 0 && r.data.data) {
         setSessions(r.data.data.items ?? [])
       }
-    } catch { /* */ }
+    } catch (e) { console.error('加载会话列表失败', e) }
   }, [])
 
   useEffect(() => { loadSessions() }, [])
@@ -152,7 +154,7 @@ export default function QAPage() {
         setActiveSessionId(d.id)
         setMessages(d.chat_history)
       }
-    } catch { /* */ }
+    } catch (e) { console.error('加载会话详情失败', e) }
     finally { setLoadingSession(false) }
   }, [])
 
@@ -181,7 +183,52 @@ export default function QAPage() {
     } catch { return null }
   }
 
-  const doAsk = async (q?: string) => {
+  /** 用 refresh_token 换取新的 access_token 并写回存储；失败返回 null。
+   *  SSE 请求走裸 fetch，不经过 api.ts 的 axios 401 刷新拦截器，故在此自行刷新。 */
+  const refreshAccessToken = async (): Promise<string | null> => {
+    try {
+      const raw = localStorage.getItem('auth-storage')
+      if (!raw) return null
+      const refreshToken = JSON.parse(raw)?.state?.refreshToken
+      if (!refreshToken) return null
+      const res = await fetch('/api/v1/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      })
+      if (!res.ok) return null
+      const body = await res.json()
+      if (body.code === 0 && body.data) {
+        const parsed = JSON.parse(raw)
+        parsed.state.token = body.data.access_token
+        parsed.state.refreshToken = body.data.refresh_token
+        localStorage.setItem('auth-storage', JSON.stringify(parsed))
+        return body.data.access_token as string
+      }
+    } catch { /* fallthrough */ }
+    return null
+  }
+
+  /** 发起 SSE 请求；遇到 401 时刷新 token 并重试一次 */
+  const fetchQa = async (body: Record<string, string | number | boolean>, signal: AbortSignal): Promise<Response> => {
+    const send = (token: string | null) => fetch('/api/v1/qa', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+      signal,
+    })
+    let res = await send(getToken())
+    if (res.status === 401) {
+      const fresh = await refreshAccessToken()
+      if (fresh) res = await send(fresh)
+    }
+    return res
+  }
+
+  const doAsk = async (q?: string, isRegenerate = false) => {
     const question = (q || input).trim()
     if (!question || asking) return
 
@@ -194,32 +241,29 @@ export default function QAPage() {
     setInput('')
     setAsking(true)
 
-    const body: Record<string, string | number> = { question }
+    const body: Record<string, string | number | boolean> = { question, use_web_search: useWebSearch }
     if (activeThreadId) body.thread_id = activeThreadId
+    if (isRegenerate) body.regenerate = true
 
     const controller = new AbortController()
     abortRef.current = controller
 
     try {
-      const token = getToken()
-      const res = await fetch('/api/v1/qa', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      })
+      const res = await fetchQa(body, controller.signal)
 
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`)
       }
 
-      // 初始化一个空的 AI 消息，后续流式填充
-      const aiIdx = messages.length + 1 // 索引 = 当前消息数（加完 user 后）
+      // 初始化一个空的 AI 消息，后续流式填充。
+      // 用 functional updater 取真实索引，避免依赖闭包中的 messages.length
+      // （regenerate 场景下 messages 闭包值是陈旧的，会导致索引错位、流式更新丢失）
       const placeholder: ChatMessage = { role: 'assistant', content: '', progress: '正在分析问题意图...' }
-      setMessages((prev) => [...prev, placeholder])
+      let aiIdx = 0
+      setMessages((prev) => {
+        aiIdx = prev.length
+        return [...prev, placeholder]
+      })
 
       const reader = res.body?.getReader()
       if (!reader) throw new Error('No response body')
@@ -261,7 +305,7 @@ export default function QAPage() {
 
           switch (currentEvent) {
             case 'classify':
-              updateMsg(() => ({ progress: '正在检索课程资料...' }))
+                  updateMsg(() => ({ progress: '正在识别问题意图...' }))
               break
 
             case 'retrieve': {
@@ -272,7 +316,7 @@ export default function QAPage() {
             }
 
             case 'rerank':
-              updateMsg(() => ({ progress: '正在重排序检索结果...' }))
+                  updateMsg(() => ({ progress: '正在重排检索结果...' }))
               break
 
             case 'generate': {
@@ -287,7 +331,7 @@ export default function QAPage() {
 
             case 'reject': {
               const reason = (payload.reason as string) ||
-                (payload.intent ? `问题意图被拦截: ${payload.intent}` : '无法处理该请求')
+                    (payload.intent ? `问题意图被拒绝：${payload.intent}` : '无法处理该请求')
               updateMsg(() => ({
                 content: '',
                 progress: undefined,
@@ -307,6 +351,10 @@ export default function QAPage() {
               if (threadId && !activeThreadId) {
                 setActiveThreadId(threadId)
               }
+              // 设置当前会话 id，使反馈提交可用（feedback 的 qa_id 即 UserSession.id）
+              if (typeof payload.session_id === 'number') {
+                setActiveSessionId(payload.session_id)
+              }
               if (searchParams.get('question')) {
                 setSearchParams({}, { replace: true })
               }
@@ -316,7 +364,7 @@ export default function QAPage() {
                 progress: undefined,
                 sources: (sources ?? []).map((s: SourceItem) => ({
                   chunk_id: s.chunk_id, document_id: s.document_id,
-                  title: s.title, score: s.score,
+                  title: s.title, score: s.score, url: s.url,
                 })),
                 isRejected,
                 rejectionReason: rejectionReason || undefined,
@@ -360,6 +408,12 @@ export default function QAPage() {
   }
 
   const openPreview = async (src: SourceItem) => {
+    // Web source → open URL in new tab
+    if (src.url) {
+      window.open(src.url, '_blank')
+      return
+    }
+    // Internal document → side panel preview
     setPreviewSrc({ docId: src.document_id, title: src.title, score: src.score })
     setLoadingPreview(true)
     setPreviewFileUrl(null)
@@ -380,21 +434,33 @@ export default function QAPage() {
   }
 
   const handleRegenerate = () => {
-    if (!lastQuestion) return
-    // Remove last AI message and re-ask
-    setMessages((prev) => prev.slice(0, -1))
-    doAsk(lastQuestion)
+    if (!lastQuestion || asking) return
+    // 移除最后一对消息（user + assistant），doAsk 会重新追加这对，避免重复的 user 气泡
+    setMessages((prev) => {
+      const next = [...prev]
+      if (next.length && next[next.length - 1].role === 'assistant') next.pop()
+      if (next.length && next[next.length - 1].role === 'user') next.pop()
+      return next
+    })
+    // 有会话线程时走后端 regenerate（回滚最后一轮重答）；否则退化为普通重问
+    doAsk(lastQuestion, Boolean(activeThreadId))
   }
 
   const submitFeedback = async () => {
-    if (!feedbackType || !activeSessionId) return
+    if (!feedbackType) { setFeedbackError('请先选择反馈类型'); return }
+    if (!activeSessionId) { setFeedbackError('当前对话尚未就绪，无法提交反馈'); return }
     setFeedbackSubmitting(true)
+    setFeedbackError('')
     try {
       await api.post('/feedback', { qa_id: activeSessionId, type: feedbackType, comment: feedbackComment })
       setFeedbackModal(false)
       setFeedbackType('')
       setFeedbackComment('')
-    } catch { /* */ }
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setFeedbackError(status === 409 ? '您已对该对话提交过反馈' : (detail || '提交失败，请稍后重试'))
+    }
     finally { setFeedbackSubmitting(false) }
   }
 
@@ -412,8 +478,8 @@ export default function QAPage() {
   const deleteSession = async (e: React.MouseEvent, sessionId: number) => {
     e.stopPropagation()
     try {
-      await api.delete(`/qa/${sessionId}`)
-    } catch { /* */ }
+      await api.delete(`/qa/sessions/${sessionId}`)
+    } catch (e) { console.error('删除会话失败', e) }
     setSessions((prev) => prev.filter((s) => s.id !== sessionId))
     if (activeSessionId === sessionId) newChat()
   }
@@ -446,7 +512,7 @@ export default function QAPage() {
                 color: '#334155', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
                 transition: 'all 0.2s',
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#818CF8'; e.currentTarget.style.color = '#4F46E5' }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--seal-sky)'; e.currentTarget.style.color = 'var(--seal-primary-hover)' }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = '#334155' }}>
               <svg width={16} height={16} viewBox="0 0 16 16" fill="none">
                 <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
@@ -462,14 +528,14 @@ export default function QAPage() {
                 onClick={() => loadSession(s.id)}
                 style={{
                   padding: '12px', marginBottom: 2, borderRadius: 8, cursor: 'pointer',
-                  background: s.id === activeSessionId ? '#EEF2FF' : 'transparent',
+                  background: s.id === activeSessionId ? 'var(--seal-ice)' : 'transparent',
                   transition: 'background 0.15s',
                 }}
                 onMouseEnter={(e) => { if (s.id !== activeSessionId) e.currentTarget.style.background = '#f1f5f9' }}
                 onMouseLeave={(e) => { if (s.id !== activeSessionId) e.currentTarget.style.background = 'transparent' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <p style={{
-                    margin: 0, fontSize: 13, fontWeight: 500, color: s.id === activeSessionId ? '#4F46E5' : '#334155',
+                    margin: 0, fontSize: 13, fontWeight: 500, color: s.id === activeSessionId ? 'var(--seal-primary-hover)' : '#334155',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8,
                   }}>
                     {s.title}
@@ -511,7 +577,7 @@ export default function QAPage() {
                 /* Welcome */
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 60 }}>
                   <div style={{
-                    width: 64, height: 64, borderRadius: 16, background: 'linear-gradient(135deg, #6366F1, #818CF8)',
+                    width: 64, height: 64, borderRadius: 16, background: 'linear-gradient(135deg, var(--seal-primary), var(--seal-sky))',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
                   }}>
                     <svg width={32} height={32} viewBox="0 0 32 32" fill="none">
@@ -530,7 +596,7 @@ export default function QAPage() {
                           border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer',
                           padding: '12px 16px', width: '100%', transition: 'all 0.2s',
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#818CF8'; e.currentTarget.style.color = '#4F46E5'; e.currentTarget.style.background = '#EEF2FF' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--seal-sky)'; e.currentTarget.style.color = 'var(--seal-primary-hover)'; e.currentTarget.style.background = 'var(--seal-ice)' }}
                         onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = '#64748b'; e.currentTarget.style.background = '#f8fafc' }}>
                         {q}
                       </button>
@@ -546,7 +612,7 @@ export default function QAPage() {
                         /* User bubble */
                         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                           <div style={{
-                            maxWidth: '80%', background: '#EEF2FF', borderRadius: '16px 16px 4px 16px',
+                            maxWidth: '80%', background: 'var(--seal-ice)', borderRadius: '16px 16px 4px 16px',
                             padding: '12px 18px', fontSize: 14, color: '#334155', lineHeight: 1.6,
                           }}>
                             {m.content}
@@ -564,30 +630,30 @@ export default function QAPage() {
                             <div style={{
                               display: 'flex', alignItems: 'flex-start', gap: 10,
                             }}>
-                              <span style={{ fontSize: 18, flexShrink: 0 }}>⚠️</span>
+                              <span style={{ fontSize: 18, flexShrink: 0 }}>!</span>
                               <span style={{ fontSize: 14, color: '#92400E', lineHeight: 1.6 }}>
-                                {m.rejectionReason || '未找到与您问题相关的课程资料'}
+                                {m.rejectionReason || '未找到与当前问题相关的课程资料'}
                               </span>
                             </div>
                           ) : m.progress ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <span style={{
                                 display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-                                background: '#6366F1', animation: 'thinking-dot 1.4s infinite ease-in-out both',
+                                background: 'var(--seal-primary)', animation: 'thinking-dot 1.4s infinite ease-in-out both',
                               }} />
                               <span style={{
                                 display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-                                background: '#6366F1', animation: 'thinking-dot 1.4s 0.2s infinite ease-in-out both',
+                                background: 'var(--seal-primary)', animation: 'thinking-dot 1.4s 0.2s infinite ease-in-out both',
                               }} />
                               <span style={{
                                 display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-                                background: '#6366F1', animation: 'thinking-dot 1.4s 0.4s infinite ease-in-out both',
+                                background: 'var(--seal-primary)', animation: 'thinking-dot 1.4s 0.4s infinite ease-in-out both',
                               }} />
-                              <span style={{ fontSize: 14, color: '#6366F1', marginLeft: 4 }}>{m.progress}</span>
+                              <span style={{ fontSize: 14, color: 'var(--seal-primary)', marginLeft: 4 }}>{m.progress}</span>
                             </div>
                           ) : (
                             <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>
-                              未找到与您问题相关的课程资料
+                              未找到与当前问题相关的课程资料
                             </span>
                           )}
 
@@ -598,19 +664,19 @@ export default function QAPage() {
                               borderTop: '1px solid #f1f5f9',
                             }}>
                               <button onClick={() => handleCopy(m.content, i)} style={{ ...actionBtnStyle, position: 'relative' }}
-                                onMouseEnter={(e) => { if (copiedIdx !== i) { e.currentTarget.style.color = '#4F46E5'; e.currentTarget.style.borderColor = '#C7D2FE'; e.currentTarget.style.background = '#EEF2FF' } }}
+                                onMouseEnter={(e) => { if (copiedIdx !== i) { e.currentTarget.style.color = 'var(--seal-primary-hover)'; e.currentTarget.style.borderColor = 'var(--seal-border)'; e.currentTarget.style.background = 'var(--seal-ice)' } }}
                                 onMouseLeave={(e) => { if (copiedIdx !== i) { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'none' } }}>
                                 <svg width={13} height={13} viewBox="0 0 16 16" fill="none"><rect x={5} y={5} width={9} height={9} rx={1} stroke="currentColor" strokeWidth={1.5} /><path d="M3 11V3h8" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /></svg>
                                 {copiedIdx === i ? '已复制 ✓' : '复制'}
                               </button>
                               <button onClick={handleRegenerate} style={actionBtnStyle}
-                                onMouseEnter={(e) => { e.currentTarget.style.color = '#4F46E5'; e.currentTarget.style.borderColor = '#C7D2FE'; e.currentTarget.style.background = '#EEF2FF' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--seal-primary-hover)'; e.currentTarget.style.borderColor = 'var(--seal-border)'; e.currentTarget.style.background = 'var(--seal-ice)' }}
                                 onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'none' }}>
                                 <svg width={13} height={13} viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 0111.2-2.8M14 8a6 6 0 01-11.2 2.8" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /><path d="M14 2v4h-4M2 14v-4h4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" /></svg>
                                 重新生成
                               </button>
-                              <button onClick={() => setFeedbackModal(true)} style={actionBtnStyle}
-                                onMouseEnter={(e) => { e.currentTarget.style.color = '#4F46E5'; e.currentTarget.style.borderColor = '#C7D2FE'; e.currentTarget.style.background = '#EEF2FF' }}
+                              <button onClick={() => { setFeedbackError(''); setFeedbackModal(true) }} style={actionBtnStyle}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--seal-primary-hover)'; e.currentTarget.style.borderColor = 'var(--seal-border)'; e.currentTarget.style.background = 'var(--seal-ice)' }}
                                 onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'none' }}>
                                 <svg width={13} height={13} viewBox="0 0 16 16" fill="none"><path d="M2 3h12l-1 9H3L2 3z" stroke="currentColor" strokeWidth={1.5} /><circle cx={12} cy={2} r={1.5} stroke="currentColor" strokeWidth={1.5} /><path d="M6 7v3M10 7v3" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /></svg>
                                 反馈
@@ -626,25 +692,41 @@ export default function QAPage() {
                                 参考来源 ({m.sources.length})
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                {m.sources.map((s, si) => (
+                                {m.sources.map((s, si) => {
+                                  const isWeb = !!s.url
+                                  return (
                                   <div key={si} onClick={() => openPreview(s)} style={{
                                     padding: '10px 12px 10px 16px', background: '#f8fafc',
                                     borderRadius: '0 8px 8px 0', fontSize: 13, lineHeight: 1.5,
-                                    borderLeft: '3px solid #6366F1', cursor: 'pointer', transition: 'all 0.2s',
+                                    borderLeft: isWeb ? '3px solid #F59E0B' : '3px solid var(--seal-primary)',
+                                    cursor: 'pointer', transition: 'all 0.2s',
                                   }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.background = '#EEF2FF'; e.currentTarget.style.borderLeftColor = '#4F46E5' }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderLeftColor = '#6366F1' }}>
+                                    onMouseEnter={(e) => { e.currentTarget.style.background = isWeb ? '#FFFBEB' : 'var(--seal-ice)'; e.currentTarget.style.borderLeftColor = isWeb ? '#D97706' : 'var(--seal-primary-hover)' }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderLeftColor = isWeb ? '#F59E0B' : 'var(--seal-primary)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                                      <div>
-                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#4F46E5', background: '#EEF2FF', padding: '2px 6px', borderRadius: 4, marginRight: 8 }}>来源 {si + 1}</span>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <span style={{
+                                          fontSize: 11, fontWeight: 600,
+                                          color: isWeb ? '#D97706' : 'var(--seal-primary-hover)',
+                                          background: isWeb ? '#FFFBEB' : 'var(--seal-ice)',
+                                          padding: '2px 6px', borderRadius: 4, marginRight: 8,
+                                        }}>
+                                          {isWeb ? '网页' : '文档'} 来源 {si + 1}
+                                        </span>
                                         <span style={{ fontWeight: 500, color: '#334155' }}>{s.title}</span>
                                       </div>
-                                      <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: '#ECFDF5', color: '#059669', fontWeight: 500, flexShrink: 0 }}>
-                                        {Math.round(s.score * 100)}%
-                                      </span>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                        <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: '#ECFDF5', color: '#059669', fontWeight: 500 }}>
+                                          {Math.round(s.score * 100)}%
+                                        </span>
+                                        {isWeb && (
+                                          <span title="在新窗口打开" style={{ fontSize: 13, opacity: 0.5 }}>↗</span>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
-                                ))}
+                                  )
+                                })}
                               </div>
                             </div>
                           )}
@@ -656,9 +738,9 @@ export default function QAPage() {
                   {/* Typing indicator */}
                   {asking && (
                     <div style={{ display: 'flex', gap: 6, padding: '8px 0' }}>
-                      <span className="qa-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366F1' }} />
-                      <span className="qa-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366F1' }} />
-                      <span className="qa-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366F1' }} />
+                      <span className="qa-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--seal-primary)' }} />
+                      <span className="qa-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--seal-primary)' }} />
+                      <span className="qa-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--seal-primary)' }} />
                     </div>
                   )}
                   <div ref={chatEndRef} />
@@ -680,8 +762,8 @@ export default function QAPage() {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1, marginRight: 12 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <svg width={16} height={16} viewBox="0 0 16 16" fill="none"><path d="M4 3h8v10H4V3z" stroke="#6366F1" strokeWidth={1.5} /></svg>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--seal-ice)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width={16} height={16} viewBox="0 0 16 16" fill="none"><path d="M4 3h8v10H4V3z" stroke="var(--seal-primary)" strokeWidth={1.5} /></svg>
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -720,7 +802,7 @@ export default function QAPage() {
                   <button onClick={() => window.open(previewFileUrl, '_blank')}
                     style={{
                       flex: 1, padding: '8px 16px', fontSize: 13, fontWeight: 500,
-                      color: '#fff', background: '#6366F1', border: 'none', borderRadius: 8, cursor: 'pointer',
+                      color: '#fff', background: 'var(--seal-primary)', border: 'none', borderRadius: 8, cursor: 'pointer',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                     }}>
                     <svg width={14} height={14} viewBox="0 0 16 16" fill="none">
@@ -763,14 +845,36 @@ export default function QAPage() {
                     width: 36, height: 36, borderRadius: 8, border: 'none',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     cursor: input.trim() && !asking ? 'pointer' : 'default',
-                    background: input.trim() && !asking ? '#6366F1' : '#e2e8f0',
+                    background: input.trim() && !asking ? 'var(--seal-primary)' : '#e2e8f0',
                     transition: 'all 0.2s', flexShrink: 0,
                   }}
-                  onMouseEnter={(e) => { if (input.trim() && !asking) e.currentTarget.style.background = '#4F46E5' }}
-                  onMouseLeave={(e) => { if (input.trim() && !asking) e.currentTarget.style.background = '#6366F1' }}>
+                  onMouseEnter={(e) => { if (input.trim() && !asking) e.currentTarget.style.background = 'var(--seal-primary-hover)' }}
+                  onMouseLeave={(e) => { if (input.trim() && !asking) e.currentTarget.style.background = 'var(--seal-primary)' }}>
                   <svg width={16} height={16} viewBox="0 0 16 16" fill="none">
                     <path d="M2 2l12 6-12 6 3-6-3-6z" stroke="#fff" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
+                </button>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setUseWebSearch(!useWebSearch)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '3px 10px', fontSize: 12, fontWeight: 500,
+                    borderRadius: 14,
+                    border: useWebSearch ? '1px solid var(--seal-primary)' : '1px solid #e2e8f0',
+                    background: useWebSearch ? 'var(--seal-ice)' : '#fff',
+                    color: useWebSearch ? 'var(--seal-primary-hover)' : '#94a3b8',
+                    cursor: 'pointer', transition: 'all 0.2s',
+                  }}
+                  title={useWebSearch ? '已开启联网搜索' : '未找到课程资料时自动联网搜索'}>
+                  <svg width={13} height={13} viewBox="0 0 16 16" fill="none">
+                    <circle cx={8} cy={8} r={6} stroke="currentColor" strokeWidth={1.3} />
+                    <ellipse cx={8} cy={8} rx={3} ry={6} stroke="currentColor" strokeWidth={1.3} />
+                    <path d="M2 8h12M8 2v12" stroke="currentColor" strokeWidth={0.8} opacity={0.4} />
+                  </svg>
+                  {useWebSearch ? '联网搜索已开启' : '联网搜索'}
                 </button>
               </div>
               <p style={{ fontSize: 11, color: '#cbd5e1', margin: '6px 0 0', textAlign: 'center' }}>
@@ -784,7 +888,7 @@ export default function QAPage() {
       {/* ====== Feedback Modal ====== */}
       {feedbackModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}
-          onClick={() => { setFeedbackModal(false); setFeedbackType(''); setFeedbackComment('') }}>
+              onClick={() => { setFeedbackModal(false); setFeedbackType(''); setFeedbackComment(''); setFeedbackError('') }}>
           <div style={{ background: '#fff', borderRadius: 12, padding: 24, maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
             onClick={(e) => e.stopPropagation()}>
             <p style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', margin: '0 0 16px' }}>反馈</p>
@@ -813,11 +917,17 @@ export default function QAPage() {
                 fontSize: 13, color: '#334155', outline: 'none', resize: 'none', fontFamily: 'inherit', marginBottom: 16,
               }} />
 
+            {feedbackError && (
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px' }}>
+                {feedbackError}
+              </p>
+            )}
+
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-              <button onClick={() => { setFeedbackModal(false); setFeedbackType(''); setFeedbackComment('') }}
+              <button onClick={() => { setFeedbackModal(false); setFeedbackType(''); setFeedbackComment(''); setFeedbackError('') }}
                 style={{ padding: '8px 20px', fontSize: 14, fontWeight: 500, color: '#64748b', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>取消</button>
               <button onClick={submitFeedback} disabled={!feedbackType || feedbackSubmitting}
-                style={{ padding: '8px 20px', fontSize: 14, fontWeight: 600, borderRadius: 8, border: 'none', cursor: feedbackType ? 'pointer' : 'default', color: '#fff', background: feedbackType ? '#6366F1' : '#c7d2fe' }}>
+                style={{ padding: '8px 20px', fontSize: 14, fontWeight: 600, borderRadius: 8, border: 'none', cursor: feedbackType ? 'pointer' : 'default', color: '#fff', background: feedbackType ? 'var(--seal-primary)' : '#c7d2fe' }}>
                 {feedbackSubmitting ? '提交中...' : '提交'}
               </button>
             </div>
