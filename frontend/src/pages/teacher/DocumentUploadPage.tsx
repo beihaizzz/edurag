@@ -71,7 +71,9 @@ export default function DocumentUploadPage() {
       if (courseId) form.append('course_id', courseId)
       if (description.trim()) form.append('description', description.trim())
       form.append('tags', JSON.stringify(tags))
-      const r = await api.post<APIResponse<unknown>>('/documents', form)
+      const r = await api.post<APIResponse<unknown>>('/documents', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
       if (r.data.code === 0) {
         setSuccess(true)
         refreshDashboard.trigger()
@@ -85,12 +87,6 @@ export default function DocumentUploadPage() {
       setSubmitting(false)
     }
   }
-
-  const courseList = courses.length > 0 ? courses : [
-    { id: 1, name: '大学物理' },{ id: 2, name: '高等数学' },{ id: 3, name: '程序设计' },
-    { id: 4, name: '操作系统' },{ id: 5, name: '数据结构' },{ id: 6, name: '深度学习' },
-    { id: 7, name: '软件工程' },{ id: 8, name: '数字图像处理' },{ id: 9, name: 'Unity开发' },
-  ]
 
   return (
     <>
@@ -192,7 +188,7 @@ export default function DocumentUploadPage() {
               <select value={courseId} onChange={(e) => setCourseId(e.target.value)}
                 style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, color: '#334155', background: '#fff', outline: 'none', cursor: 'pointer', boxSizing: 'border-box' }}>
                 <option value="">选择课程（可选）</option>
-                {courseList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
           </div>

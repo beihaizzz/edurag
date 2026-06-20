@@ -6,7 +6,10 @@ import type { APIResponse, PaginatedResponse } from '../types/api'
 export interface CourseInfo {
   id: number
   name: string
-  code: string | null
+  semester: string
+  teacher: { id: number; real_name: string } | null
+  document_count: number
+  created_at: string | null
 }
 
 export interface DocumentInfo {
@@ -57,9 +60,7 @@ export const uploadDocument = async (
   formData.append('file_type', metadata.file_type)
   if (metadata.course_id != null) formData.append('course_id', String(metadata.course_id))
   if (metadata.description) formData.append('description', metadata.description)
-  if (metadata.tags && metadata.tags.length > 0) {
-    metadata.tags.forEach((t) => formData.append('tags', t))
-  }
+  formData.append('tags', JSON.stringify(metadata.tags ?? []))
 
   const res = await api.post<APIResponse<DocumentInfo>>('/documents', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -124,8 +125,36 @@ export const approveDocument = async (
 
 /** 获取课程列表（供下拉选择使用） */
 export const getCourses = async (): Promise<CourseInfo[]> => {
-  const res = await api.get<APIResponse<CourseInfo[]>>('/courses')
+  const res = await api.get<APIResponse<PaginatedResponse<CourseInfo>>>('/courses', {
+    params: { page: 1, page_size: 100 },
+  })
+  const data = unwrap(res.data)
+  return data.items
+}
+
+/** 创建课程 */
+export const createCourse = async (data: {
+  name: string
+  semester: string
+  description?: string
+}): Promise<CourseInfo> => {
+  const res = await api.post<APIResponse<CourseInfo>>('/courses', data)
   return unwrap(res.data)
+}
+
+/** 更新课程（部分更新） */
+export const updateCourse = async (
+  id: number,
+  data: { name?: string; semester?: string; description?: string },
+): Promise<CourseInfo> => {
+  const res = await api.put<APIResponse<CourseInfo>>(`/courses/${id}`, data)
+  return unwrap(res.data)
+}
+
+/** 删除课程（管理员专用，软删除） */
+export const deleteCourse = async (id: number): Promise<void> => {
+  const res = await api.delete<APIResponse<null>>(`/courses/${id}`)
+  unwrap(res.data)
 }
 
 // ─── Statistics API ──────────────────────────────────────────────────────────

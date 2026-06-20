@@ -15,6 +15,7 @@ import QAHistory from '../pages/student/QAHistory'
 import TeacherHomePage from '../pages/teacher/TeacherHomePage'
 import DocumentUploadPage from '../pages/teacher/DocumentUploadPage'
 import DocumentListPage from '../pages/teacher/DocumentListPage'
+import CourseManagePage from '../pages/teacher/CourseManagePage'
 
 import AdminHomePage from '../pages/admin/AdminHomePage'
 import ReviewList from '../pages/admin/ReviewList'
@@ -58,6 +59,7 @@ const router = createBrowserRouter([
               { path: '/teacher', element: <TeacherHomePage /> },
               { path: '/teacher/documents/upload', element: <DocumentUploadPage /> },
               { path: '/teacher/documents', element: <DocumentListPage /> },
+              { path: '/teacher/courses', element: <CourseManagePage /> },
             ],
           },
         ],
@@ -74,9 +76,10 @@ const router = createBrowserRouter([
               { path: '/admin/review', element: <ReviewList /> },
               { path: '/admin/users', element: <UserManage /> },
               { path: '/admin/audit-logs', element: <AuditLogPage /> },
-              // 管理端也能访问教师文档管理
+              // 管理端也能访问教师页面
               { path: '/teacher/documents/upload', element: <DocumentUploadPage /> },
               { path: '/teacher/documents', element: <DocumentListPage /> },
+              { path: '/teacher/courses', element: <CourseManagePage /> },
             ],
           },
         ],

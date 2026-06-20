@@ -41,6 +41,7 @@ export default function DocumentListPage() {
   const [courses, setCourses] = useState<CourseItem[]>([])
   const [modal, setModal] = useState<{ type: string; doc: DocItem } | null>(null)
   const [acting, setActing] = useState(false)
+  const [actionError, setActionError] = useState('')
   const [viewDoc, setViewDoc] = useState<DocDetail | null>(null)
   const [viewLoading, setViewLoading] = useState(false)
 
@@ -83,27 +84,33 @@ export default function DocumentListPage() {
 
   const doAction = async (id: number, action: string, extra?: Record<string, string>) => {
     setActing(true)
+    setActionError('')
     try {
+      let res
       if (action === 'delete') {
-        await api.delete(`/documents/${id}`)
+        res = await api.delete<APIResponse<unknown>>(`/documents/${id}`)
       } else if (action === 'approve') {
-        await api.post(`/documents/${id}/approve`, { status: extra?.status || 'approved', comment: extra?.comment || '' })
+        res = await api.post<APIResponse<unknown>>(`/documents/${id}/approve`, { status: extra?.status || 'approved', comment: extra?.comment || '' })
       } else if (action === 'process') {
-        await api.post(`/documents/${id}/process`)
+        res = await api.post<APIResponse<unknown>>(`/documents/${id}/process`)
+      }
+      if (res && res.data.code !== 0) {
+        setActionError(res.data.message || '操作失败，请重试')
+        return
       }
       refreshDashboard.trigger()
       load(page)
-    } catch { /* */ }
-    finally { setModal(null); setActing(false) }
+      setModal(null)
+    } catch (err: unknown) {
+      const label = action === 'delete' ? '删除' : action === 'approve' ? '审核' : '处理'
+      const msg = err instanceof Error ? err.message : '请检查网络或稍后重试'
+      setActionError(`${label}失败：${msg}`)
+    } finally {
+      setActing(false)
+    }
   }
 
   const openModal = (type: string, doc: DocItem) => setModal({ type, doc })
-
-  const courseList = courses.length > 0 ? courses : [
-    { id: 1, name: '大学物理' },{ id: 2, name: '高等数学' },{ id: 3, name: '程序设计' },
-    { id: 4, name: '操作系统' },{ id: 5, name: '数据结构' },{ id: 6, name: '深度学习' },
-    { id: 7, name: '软件工程' },{ id: 8, name: '数字图像处理' },{ id: 9, name: 'Unity开发' },
-  ]
 
   return (
     <>
@@ -125,6 +132,14 @@ export default function DocumentListPage() {
           </button>
         </div>
 
+        {actionError && (
+          <div className="td-anim" style={{ padding: 12, borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width={16} height={16} viewBox="0 0 16 16" fill="none"><circle cx={8} cy={8} r={7} stroke="currentColor" strokeWidth={1.5} /><path d="M8 5v3.5M8 11h0" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /></svg>
+            {actionError}
+            <button onClick={() => setActionError('')} style={{ marginLeft: 'auto', color: '#b91c1c', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="td-anim" style={{ animationDelay: '0.05s', background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '16px 20px', marginBottom: 16 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
@@ -133,7 +148,7 @@ export default function DocumentListPage() {
               <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}
                 style={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8, padding: '4px 12px', background: '#fff', color: '#475569', outline: 'none', cursor: 'pointer' }}>
                 <option value="">全部课程</option>
-                {courseList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -26,6 +26,7 @@ export default function ReviewList() {
   const [acting, setActing] = useState(false)
   const [viewDoc, setViewDoc] = useState<DocDetail | null>(null)
   const [viewLoading, setViewLoading] = useState(false)
+  const [actionError, setActionError] = useState('')
   const pageSize = 10
 
   const load = async (p: number) => {
@@ -55,12 +56,22 @@ export default function ReviewList() {
 
   const doAudit = async (id: number, status: string) => {
     setActing(true)
+    setActionError('')
     try {
-      await api.post(`/documents/${id}/approve`, { status, comment: '' })
+      const r = await api.post<APIResponse<unknown>>(`/documents/${id}/approve`, { status, comment: '' })
+      if (r.data.code !== 0) {
+        setActionError(r.data.message || '操作失败，请重试')
+        return
+      }
       refreshDashboard.trigger()
       load(page)
-    } catch { /* */ }
-    finally { setModal(null); setActing(false) }
+      setModal(null)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '操作失败，请检查网络或稍后重试'
+      setActionError(`审核失败：${msg}`)
+    } finally {
+      setActing(false)
+    }
   }
 
   return (
@@ -77,6 +88,14 @@ export default function ReviewList() {
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: total > 0 ? '#f59e0b' : '#10b981', animation: total > 0 ? 'fadeInUp 0.8s ease-in-out infinite alternate' : 'none' }} />
           <span style={{ fontSize: 14, color: '#64748b' }}>当前共 <span style={{ fontWeight: 600, color: '#334155' }}>{total}</span> 份文档待审核</span>
         </div>
+
+        {actionError && (
+          <div className="ar-anim" style={{ padding: 12, borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width={16} height={16} viewBox="0 0 16 16" fill="none"><circle cx={8} cy={8} r={7} stroke="currentColor" strokeWidth={1.5} /><path d="M8 5v3.5M8 11h0" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" /></svg>
+            {actionError}
+            <button onClick={() => setActionError('')} style={{ marginLeft: 'auto', color: '#b91c1c', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+          </div>
+        )}
 
         <div className="ar-anim" style={{ animationDelay: '0.08s', background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>

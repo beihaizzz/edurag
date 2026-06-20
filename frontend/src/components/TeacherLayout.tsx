@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore'
 
 const navItems = [
   { path: '/teacher', label: '工作台' },
+  { path: '/teacher/courses', label: '课程管理' },
   { path: '/teacher/documents/upload', label: '上传资料' },
   { path: '/teacher/documents', label: '文档管理' },
 ]
