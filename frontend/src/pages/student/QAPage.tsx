@@ -321,7 +321,7 @@ case 'classify':
 
             case 'retrieve': {
               const src = payload.source === 'web' ? '网络' : '课程'
-              const msg = payload.has_results ? `已找到相关${src}资料` : `未找到${src}资料`
+              const msg = payload.has_results ? `正在阅读${src}资料...` : `未找到${src}资料`
               updateMsg(() => ({ progress: msg }))
               break
             }
