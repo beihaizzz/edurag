@@ -10,6 +10,14 @@ class Settings(BaseSettings):
     APP_NAME: str = "EduRAG"
     DEBUG: bool = True
 
+    # Timezone used to interpret naive datetimes read from / written to
+    # the database. The PG server is configured for Asia/Shanghai and
+    # ``func.now()`` writes naive timestamps in that local timezone into
+    # ``DateTime`` (no tz) columns. Set this to match the PG server's
+    # ``timezone`` setting so the API can correctly convert naive DB
+    # timestamps to absolute UTC ISO-8601 strings for the frontend.
+    SERVER_TIMEZONE: str = "Asia/Shanghai"
+
     # ── 数据库 ────────────────────────────────
     DATABASE_URL: str = "postgresql+asyncpg://eduraq:eduraq@localhost:5432/eduraq"
     DATABASE_URL_SYNC: str = "postgresql://eduraq:eduraq@localhost:5432/eduraq"

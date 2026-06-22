@@ -8,13 +8,15 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Integer, cast, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.config import settings
+from app.core.database import AsyncSessionLocal, get_db
 from app.deps import get_current_user
 from app.graph.builder import build_rag_graph
 from app.graph.state import RAGState
@@ -25,6 +27,30 @@ from app.schemas.search import QaCreate
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["qa"])
+
+# Server-side timezone used to interpret naive datetimes coming out of
+# ``DateTime`` (no-tz) columns. PG's ``func.now()`` writes naive values
+# in the server's ``timezone`` setting; we mirror that here so we can
+# convert back to absolute UTC for the API.
+_SERVER_TZ = ZoneInfo(settings.SERVER_TIMEZONE)
+
+
+def _iso_utc(dt: datetime | None) -> str | None:
+    """Serialize a (possibly naive) datetime as an ISO-8601 UTC string.
+
+    Legacy rows store ``DateTime`` columns without ``timezone=True``, so
+    SQLAlchemy returns naive ``datetime`` objects whose wall-clock value
+    is in the database server's local timezone (``settings.SERVER_TIMEZONE``).
+    We localise to that tz, convert to UTC, then emit a ``Z``-suffixed
+    ISO string so JavaScript's ``new Date()`` parses it as an absolute
+    instant instead of as the user's local time.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_SERVER_TZ)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
 
 # Per-thread locks to serialize regenerate / continuation on the same thread,
 # preventing concurrent checkpoint forks on a single conversation.
@@ -99,7 +125,161 @@ async def ask_question(
         session_record = session
         await db.commit()
 
+    async def _persist_turn(
+        *,
+        state_values: dict,
+        latency_ms: int,
+    ) -> QAHistory | None:
+        """Persist this turn to qa_history and bump session.updated_at.
+
+        Called from inside ``event_stream`` after the LangGraph run finishes
+        OR from the ``finally`` block when the SSE stream is aborted /
+        errored mid-flight, so a partially-completed turn still:
+
+        1. Appears in the sidebar at the correct position
+           (``UserSession.updated_at`` is refreshed).
+        2. Shows up in ``GET /qa/sessions/{id}`` with whatever
+           ``chat_history`` LangGraph managed to checkpoint.
+        3. Has a row in ``qa_history`` for the flat history page (even
+           if ``answer`` is empty).
+
+        Wrapped in ``asyncio.shield`` by the caller so the DB writes
+        themselves can't be cancelled by the same abort that triggered
+        the persistence.
+        """
+        try:
+            # Regenerate replaces the last turn: drop the stale QAHistory row
+            # for this thread before inserting the freshly generated one.
+            if regenerate:
+                stale = await db.execute(
+                    select(QAHistory)
+                    .where(QAHistory.thread_id == thread_id, QAHistory.user_id == user.id)
+                    .order_by(desc(QAHistory.id))
+                    .limit(1)
+                )
+                stale_record = stale.scalar_one_or_none()
+                if stale_record:
+                    await db.delete(stale_record)
+                    await db.commit()
+
+            qa_record = QAHistory(
+                user_id=user.id,
+                course_id=course_id,
+                thread_id=thread_id,
+                question=question,
+                answer=state_values.get("answer", ""),
+                sources=state_values.get("sources", []),
+                is_rejected=state_values.get("is_rejected", False),
+                latency_ms=latency_ms,
+            )
+            db.add(qa_record)
+            await db.commit()
+            await db.refresh(qa_record)
+
+            # Bump session.updated_at so the sidebar (ordered by updated_at desc)
+            # surfaces the most-recently-touched session first, including aborted ones.
+            # Use func.now() to match the timezone semantics of server_default=func.now()
+            # on this `DateTime` (no tz) column — the DB converts UTC → session tz
+            # (Asia/Shanghai in dev) before stripping the tz info. Mixing in
+            # datetime.utcnow() here would store 8h-offset values that break sort order.
+            await db.refresh(session_record)
+            session_record.updated_at = func.now()
+            await db.commit()
+
+            return qa_record
+        except Exception:
+            logger.exception("Failed to persist turn for thread %s", thread_id)
+            return None
+
+    # Hoisted to the handler scope so both event_stream() and the
+    # _persist_on_abort background task can compute the same latency.
+    start_time = time.perf_counter()
+
+    async def _persist_on_abort(*, thread_id_: str) -> None:
+        """Persist a turn from a brand-new DB session after SSE abort.
+
+        Background task spawned from the ``finally`` block when the SSE
+        generator is torn down (e.g. client clicked "新对话" mid-stream).
+        The request-scoped ``db`` is closed by FastAPI by the time we
+        run, so we open our own session here and re-fetch the
+        ``UserSession`` row by ``thread_id``.
+
+        Reads the latest LangGraph checkpoint to capture whatever the
+        graph managed to complete before being cancelled.
+        """
+        try:
+            graph = await build_rag_graph()
+            try:
+                snap = await graph.aget_state({"configurable": {"thread_id": thread_id_}})
+                state_values = snap.values if snap else {}
+            except Exception:
+                logger.exception("aget_state failed during abort persist for %s", thread_id_)
+                state_values = {}
+
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+            async with AsyncSessionLocal() as bg_db:
+                # Locate the session row by thread_id (id may not be known yet
+                # if the persistence happens before any prior commit).
+                sess_stmt = select(UserSession).where(UserSession.thread_id == thread_id_)
+                sess = (await bg_db.execute(sess_stmt)).scalar_one_or_none()
+                if sess is None:
+                    logger.warning("Abort persist: UserSession %s not found", thread_id_)
+                    return
+
+                if regenerate:
+                    stale_stmt = (
+                        select(QAHistory)
+                        .where(QAHistory.thread_id == thread_id_, QAHistory.user_id == sess.user_id)
+                        .order_by(desc(QAHistory.id))
+                        .limit(1)
+                    )
+                    stale_record = (await bg_db.execute(stale_stmt)).scalar_one_or_none()
+                    if stale_record:
+                        await bg_db.delete(stale_record)
+                        await bg_db.commit()
+
+                qa_record = QAHistory(
+                    user_id=sess.user_id,
+                    course_id=course_id,
+                    thread_id=thread_id_,
+                    question=question,
+                    answer=state_values.get("answer", ""),
+                    sources=state_values.get("sources", []),
+                    is_rejected=state_values.get("is_rejected", False),
+                    latency_ms=latency_ms,
+                )
+                bg_db.add(qa_record)
+                sess.updated_at = func.now()  # see _persist_turn for tz rationale
+                await bg_db.commit()
+                logger.info("Persisted aborted turn for thread %s", thread_id_)
+        except Exception:
+            logger.exception("Background persist-on-abort failed for thread %s", thread_id_)
+
     async def event_stream():
+        persisted = False  # guard against double-write between normal and finally paths
+        latest_state_values: dict = {}
+
+        async def _save_once() -> QAHistory | None:
+            """Read LangGraph state, persist QAHistory + updated_at. Idempotent."""
+            nonlocal persisted, latest_state_values
+            if persisted:
+                return None
+            persisted = True
+            try:
+                graph = await build_rag_graph()
+                snap = await graph.aget_state({"configurable": {"thread_id": thread_id}})
+                latest_state_values = snap.values if snap else {}
+            except Exception:
+                logger.exception("Failed to read LangGraph state for thread %s", thread_id)
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            # Shield from cancellation: if the client just aborted, we MUST
+            # still finish the DB write or the session is stuck with stale
+            # updated_at and an empty qa_history.
+            return await asyncio.shield(
+                _persist_turn(state_values=latest_state_values, latency_ms=latency_ms)
+            )
+
         try:
             # Build graph
             graph = await build_rag_graph()
@@ -143,7 +323,6 @@ async def ask_question(
                     }
 
                 last_node = ""
-                start_time = time.perf_counter()
 
                 async for event in graph.astream(
                     initial_input,
@@ -188,62 +367,20 @@ async def ask_question(
                         elif node_name == "return_answer":
                             pass  # handled in done event
 
-                # After stream completes, retrieve persisted state from checkpointer.
-                # Always use the thread-level config (no checkpoint_id) so we read
-                # the LATEST state. During regenerate, `config` points at the replay
-                # checkpoint_id, whose snapshot predates the freshly generated answer.
-                state_snapshot = await graph.aget_state({"configurable": {"thread_id": thread_id}})
-                state_values = state_snapshot.values if state_snapshot else {}
+                # Normal path: stream finished, persist + emit done event.
+                qa_record = await _save_once()
 
-                # ── Persist to qa_history ──
-                end_time = time.perf_counter()
-                latency_ms = int((end_time - start_time) * 1000)
-
-                # Regenerate replaces the last turn: drop the stale QAHistory row
-                # for this thread before inserting the freshly generated one.
-                if regenerate:
-                    stale = await db.execute(
-                        select(QAHistory)
-                        .where(QAHistory.thread_id == thread_id, QAHistory.user_id == user.id)
-                        .order_by(desc(QAHistory.id))
-                        .limit(1)
-                    )
-                    stale_record = stale.scalar_one_or_none()
-                    if stale_record:
-                        await db.delete(stale_record)
-                        await db.commit()
-
-                qa_record = QAHistory(
-                    user_id=user.id,
-                    course_id=course_id,
-                    thread_id=thread_id,
-                    question=question,
-                    answer=state_values.get("answer", ""),
-                    sources=state_values.get("sources", []),
-                    is_rejected=state_values.get("is_rejected", False),
-                    latency_ms=latency_ms,
-                )
-                db.add(qa_record)
-                await db.commit()
-                await db.refresh(qa_record)
-
-                # Send done event
-                is_rejected = state_values.get("is_rejected", False)
+                is_rejected = latest_state_values.get("is_rejected", False)
                 done_data = {
-                    "answer": state_values.get("answer", ""),
-                    "sources": [] if is_rejected else state_values.get("sources", []),
+                    "answer": latest_state_values.get("answer", ""),
+                    "sources": [] if is_rejected else latest_state_values.get("sources", []),
                     "is_rejected": is_rejected,
-                    "rejection_reason": state_values.get("rejection_reason", ""),
-                    "id": qa_record.id,
+                    "rejection_reason": latest_state_values.get("rejection_reason", ""),
+                    "id": qa_record.id if qa_record else None,
                     "session_id": session_record.id,
                     "thread_id": thread_id,
                 }
                 yield f"event: done\ndata: {json.dumps(done_data, default=str)}\n\n"
-
-                # Update session timestamp
-                await db.refresh(session_record)
-                session_record.updated_at = datetime.utcnow()
-                await db.commit()
 
         except Exception as e:
             import traceback
@@ -251,6 +388,28 @@ async def ask_question(
             detail = f"{type(e).__name__}: {e} | {loop_info}"
             logger.exception("SSE stream failed: %s", detail)
             yield f"event: error\ndata: {json.dumps({'error': 'internal_error', 'detail': detail, 'trace': traceback.format_exc()[-500:]})}\n\n"
+        finally:
+            # GeneratorExit (client abort) lands here too. We can't yield
+            # anymore, and we can't `await` long operations because the
+            # generator is being torn down — but we still MUST persist so
+            # the aborted conversation appears with correct timestamp and
+            # any partial chat_history.
+            #
+            # Solution: dispatch persistence as a fire-and-forget background
+            # task on the running event loop. The task survives this
+            # generator's teardown because it's owned by the loop, not the
+            # generator. Note: the request-scoped `db` session is closed by
+            # FastAPI after the response finishes, so we open a fresh
+            # session inside the background coroutine.
+            if not persisted:
+                persisted = True  # prevent re-entry if finally is hit twice
+                try:
+                    asyncio.get_running_loop().create_task(
+                        _persist_on_abort(thread_id_=thread_id)
+                    )
+                except RuntimeError:
+                    # No running loop (extremely unlikely here). Best-effort: log.
+                    logger.warning("No running loop to schedule abort persistence")
 
     return StreamingResponse(
         event_stream(),
@@ -336,7 +495,7 @@ async def list_qa_records(
             "is_rejected": r.is_rejected,
             "latency_ms": r.latency_ms or 0,
             "course_id": r.course_id,
-            "created_at": str(r.created_at),
+            "created_at": _iso_utc(r.created_at),
         }
         for r in records
     ]
@@ -390,8 +549,8 @@ async def list_sessions(
             "first_question": s.first_question,
             "turn_count": s.turn_count,
             "course_id": s.course_id,
-            "created_at": str(s.created_at),
-            "updated_at": str(s.updated_at),
+            "created_at": _iso_utc(s.created_at),
+            "updated_at": _iso_utc(s.updated_at),
         }
         for s in sessions
     ]
@@ -457,8 +616,8 @@ async def get_session_detail(
             "first_question": session.first_question,
             "turn_count": session.turn_count,
             "course_id": session.course_id,
-            "created_at": str(session.created_at),
-            "updated_at": str(session.updated_at),
+            "created_at": _iso_utc(session.created_at),
+            "updated_at": _iso_utc(session.updated_at),
             "chat_history": chat_history,
         },
     }
