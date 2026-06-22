@@ -465,6 +465,10 @@ export default function QAPage() {
   }
 
   const newChat = () => {
+    // Cancel any in-flight SSE stream and clear loading state so that
+    // clicking "新对话" during AI generation immediately unfreezes the UI.
+    abortRef.current?.abort()
+    setAsking(false)
     setActiveThreadId(null)
     setActiveSessionId(null)
     setMessages([])
