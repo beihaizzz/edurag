@@ -9,7 +9,8 @@ class RAGState(TypedDict, total=False):
     query_was_rewritten: bool        # rewrite_query 是否真的调用了 LLM 改写（vs passthrough）
     course_id: int | None
     use_web_search: bool
-    intent: str                        # NORMAL | CHEATING | SENSITIVE | ATTACK
+    intent: str                        # NORMAL | CHITCHAT | CHEATING | SENSITIVE | ATTACK
+    sub_intent: str                    # CONCEPT | PROCEDURE | REASONING | COMPARISON | EXAMPLE | FOLLOWUP (only for NORMAL)
     internal_results: list[dict]
     document_titles: dict[int, str]    # 文档标题映射 {doc_id: title}
     has_internal_results: bool
