@@ -49,7 +49,7 @@ export default function QAHistory() {
   useEffect(() => {
     api.get<APIResponse<PaginatedResponse<CourseItem>>>('/courses', { params: { page: 1, page_size: 100 } })
       .then((r) => { if (r.data.code === 0 && r.data.data) setCourses(r.data.data.items ?? []) })
-      .catch(() => {})
+      .catch((e) => { console.error('Failed to load courses:', e) })
   }, [])
 
   const load = async (p: number) => {
@@ -64,7 +64,7 @@ export default function QAHistory() {
         setPage(p)
         setHasMore(p < r.data.data.total_pages)
       }
-    } catch { /* */ }
+    } catch (e) { console.error('Failed to load QA history:', e) }
   }
 
   useEffect(() => { load(1) }, [])

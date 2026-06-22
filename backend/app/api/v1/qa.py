@@ -263,6 +263,71 @@ async def ask_question(
     )
 
 # ═══════════════════════════════════════════════════════════════════════
+# GET /qa — list flat QAHistory records (for "问答历史" page)
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.get("/qa", response_model=APIResponse[PaginatedData])
+async def list_qa_records(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
+    course_id: int | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List current user's flat QAHistory records, newest first (paginated).
+
+    Powers the student "问答历史" page (`/student/history`). Unlike
+    ``GET /qa/sessions`` which groups by ``user_sessions``, this returns
+    every individual Q&A turn from the ``qa_history`` table.
+    """
+    offset = (page - 1) * page_size
+
+    base_filters = [QAHistory.user_id == user.id]
+    if course_id is not None:
+        base_filters.append(QAHistory.course_id == course_id)
+
+    count_stmt = select(func.count()).select_from(QAHistory).where(*base_filters)
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    stmt = (
+        select(QAHistory)
+        .where(*base_filters)
+        .order_by(desc(QAHistory.created_at))
+        .offset(offset)
+        .limit(page_size)
+    )
+    result = await db.execute(stmt)
+    records = result.scalars().all()
+
+    items = [
+        {
+            "id": r.id,
+            "question": r.question,
+            "answer": r.answer,
+            "sources": r.sources,
+            "is_rejected": r.is_rejected,
+            "latency_ms": r.latency_ms or 0,
+            "course_id": r.course_id,
+            "created_at": str(r.created_at),
+        }
+        for r in records
+    ]
+
+    total_pages = (total + page_size - 1) // page_size if total else 1
+
+    return {
+        "code": 0,
+        "message": "ok",
+        "data": {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+        },
+    }
+
+# ═══════════════════════════════════════════════════════════════════════
 # GET /qa/sessions — list sessions
 # ═══════════════════════════════════════════════════════════════════════
 
