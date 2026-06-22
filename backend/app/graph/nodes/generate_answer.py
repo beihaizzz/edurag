@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -14,6 +15,30 @@ from app.graph.state import RAGState
 logger = logging.getLogger(__name__)
 
 MAX_CHAT_HISTORY_TURNS = 5  # Keep last 5 conversation turns
+
+# Pure-pronoun / pure-continuation follow-ups. When the user's literal
+# current-turn question contains essentially no semantic content of its
+# own (e.g. "详细讲讲", "继续", "为什么"), citing web/internal context
+# against that question makes the LLM refuse with the no-information
+# template even though chat_history clearly says what to talk about.
+# In that case we force the fallback prompt regardless of context, so
+# the LLM is told explicitly: lean on history + your own knowledge.
+_PURE_FOLLOWUP_RE = re.compile(
+    r"^\s*(?:"
+    r"详细(?:讲讲|说说|解释)?吗?"
+    r"|(?:再|继续|然后|接着)\s*(?:讲讲|说说|说|讲)?"
+    r"|举(?:个例子|例)"
+    r"|为什么|为何"
+    r"|怎么(?:讲|说|回事)?"
+    r"|还有(?:吗|呢)?"
+    r"|嗯|好|对|哦"
+    r")\s*[?？。.！!]*\s*$",
+)
+
+
+def _is_pure_followup(question: str) -> bool:
+    """Return True if the question is a pure follow-up phrase (no semantic content of its own)."""
+    return bool(_PURE_FOLLOWUP_RE.match(question)) and len(question) <= 12
 
 
 async def generate_answer(state: RAGState) -> dict:
@@ -30,9 +55,24 @@ async def generate_answer(state: RAGState) -> dict:
     search_mode = state.get("search_mode", "internal")
     sources = state.get("sources", [])
 
-    # Build system prompt — use fallback if no context, else inject context
-    if not context or not context.strip():
+    # Build system prompt — use fallback if no context OR if the user's current
+    # question is a pure follow-up phrase. Forcing the main prompt with low-
+    # quality web context against a contentless question ("详细讲讲") makes
+    # the LLM refuse with the no-information template; fallback prompt with
+    # chat_history is far more reliable in that case.
+    pure_followup = _is_pure_followup(question)
+    use_fallback = (not context or not context.strip()) or pure_followup
+    if use_fallback:
         system_prompt = GENERATE_FALLBACK_PROMPT
+        # Drop sources too: in fallback mode the answer comes from AI knowledge,
+        # not from the retrieved web/internal context, so citing them would be
+        # misleading.
+        if pure_followup and context:
+            logger.info(
+                "Forcing fallback prompt for pure-followup question %r (had %d chars of context)",
+                question, len(context),
+            )
+            sources = []
     else:
         system_prompt = GENERATE_SYSTEM_PROMPT.format(context=context)
 

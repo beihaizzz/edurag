@@ -117,11 +117,29 @@ async def rewrite_query(state: RAGState) -> dict:
         rewritten = rewritten.strip().strip('"').strip("'")
         query_was_rewritten = True
 
-        # Sanity: if the LLM returns something empty or absurdly long, use original
+        # Sanity: if the LLM returns something empty or absurdly long, use a
+        # deterministic fallback before giving up entirely. DeepSeek
+        # occasionally returns empty text for ultra-short follow-ups like
+        # "详细讲讲" when it can't decide what to do — but in that case the
+        # cheap rule "current question + last user question" is good enough
+        # to give the retriever something to chew on.
         if not rewritten or len(rewritten) > 500:
-            logger.warning("Rewrite result invalid (empty/too long), falling back to original")
-            rewritten = question
-            query_was_rewritten = False
+            last_user_q = next(
+                (m.get("content", "") for m in reversed(chat_history)
+                 if m.get("role") == "user"),
+                "",
+            )
+            if last_user_q:
+                rewritten = f"{last_user_q} {question}"
+                query_was_rewritten = True
+                logger.warning(
+                    "Rewrite LLM returned empty/oversized, using rule-based fallback: %r",
+                    rewritten[:80],
+                )
+            else:
+                logger.warning("Rewrite result invalid and no history, falling back to original")
+                rewritten = question
+                query_was_rewritten = False
 
         logger.info(
             "Query rewritten: %r → %r (was_rewritten=%s)",
