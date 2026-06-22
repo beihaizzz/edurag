@@ -476,6 +476,12 @@ export default function QAPage() {
     setLastQuestion('')
     setPreviewSrc(null)
     setPreviewFileUrl(null)
+    // Refresh sidebar so the just-aborted conversation shows up immediately.
+    // The backend creates UserSession on the first user message (before the
+    // SSE stream finishes), so it is already persisted even if we abort mid-
+    // generation. Without this call, the sidebar only refreshes after a full
+    // doAsk() completes — leaving aborted conversations invisible until F5.
+    loadSessions()
     inputRef.current?.focus()
   }
 
