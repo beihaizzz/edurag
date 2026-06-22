@@ -26,8 +26,14 @@ async def rerank(state: RAGState) -> dict:
     """
     internal_results = state.get("internal_results", [])
     question = state.get("question", "")
+    # The reranker scores each chunk against a query. Using the raw current-turn
+    # question ("继续讲讲") on a follow-up produces near-zero relevance scores
+    # for every chunk because the question has no concrete semantic content.
+    # Use the rewritten query (e.g. "链表的详细原理") so the cross-encoder can
+    # actually judge relevance.
+    rerank_query = state.get("rewritten_question") or question
 
-    if not internal_results or not question:
+    if not internal_results or not rerank_query:
         return {
             "internal_results": internal_results,
             "has_internal_results": bool(internal_results),
@@ -40,7 +46,7 @@ async def rerank(state: RAGState) -> dict:
         documents = [r.get("content", "") for r in internal_results]
         top_n = settings.RERANK_TOP_K
 
-        results = await reranker_service.rerank(question, documents, top_n=top_n)
+        results = await reranker_service.rerank(rerank_query, documents, top_n=top_n)
 
         # Map results[].index → internal_results[idx], set relevance score, and
         # keep only chunks whose cross-encoder relevance clears the threshold.

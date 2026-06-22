@@ -17,9 +17,13 @@ async def web_search(state: RAGState) -> dict:
     Gracefully returns empty on timeout or missing API key.
     """
     question = state.get("question", "")
+    # Use the rewritten query if rewrite_query produced one. Web search on
+    # short follow-ups like "继续讲讲" pulls random unrelated pages; the
+    # rewritten form ("链表的详细原理") gives Tavily a fighting chance.
+    search_query = state.get("rewritten_question") or question
 
     results = await search_tavily(
-        query=question,
+        query=search_query,
         max_results=5,
         timeout=10.0,
     )
@@ -52,7 +56,7 @@ async def web_search(state: RAGState) -> dict:
         })
 
     context = "\n\n".join(context_parts)
-    logger.info("Web search: %d results for '%s'", len(sources), question[:50])
+    logger.info("Web search: %d results for '%s'", len(sources), search_query[:50])
 
     return {
         "context": context,
