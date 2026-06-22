@@ -129,33 +129,47 @@ async def generate_answer(state: RAGState) -> dict:
     search_mode = state.get("search_mode", "internal")
     sources = state.get("sources", [])
     sub_intent = state.get("sub_intent", "") or "CONCEPT"
+    query_was_rewritten = state.get("query_was_rewritten", False)
 
     # Build system prompt:
     # 1. No real context → fallback (AI knowledge)
-    # 2. Pure follow-up question ("详细讲讲") → fallback even WITH context,
-    #    because citing irrelevant web hits against a contentless question
-    #    makes the LLM refuse with the no-info template
-    # 3. Real context AND real question → main prompt with citations
+    # 2. Pure follow-up question WITHOUT a successful rewrite → fallback
+    #    even WITH context, because citing search hits done against a
+    #    contentless query ("继续讲讲") makes the LLM refuse with the
+    #    no-info template.
+    # 3. Pure follow-up WITH a successful rewrite → MAIN prompt: the
+    #    rewrite_query node produced a concrete query like "链表的详细
+    #    原理", so the retrieved context IS relevant to the user's
+    #    actual intent — we want the LLM to cite it.
+    # 4. Real context AND real question → main prompt with citations
     pure_followup = _is_pure_followup(question, sub_intent)
-    use_fallback = (not context or not context.strip()) or pure_followup
+    has_context = bool(context and context.strip())
+    # A pure follow-up is only "stranded" (forces fallback even with context)
+    # when the rewriter didn't help — i.e. the context was searched using the
+    # raw contentless question. If rewrite succeeded, treat the context as
+    # legitimate retrieval against the rewritten query.
+    stranded_followup = pure_followup and not query_was_rewritten
+    use_fallback = (not has_context) or stranded_followup
 
     if use_fallback:
         system_prompt = select_fallback_prompt(sub_intent)
         logger.info(
             "generate_answer: using FALLBACK prompt for sub_intent=%s "
-            "(context=%d chars, pure_followup=%s)",
-            sub_intent, len(context or ""), pure_followup,
+            "(context=%d chars, pure_followup=%s, rewritten=%s)",
+            sub_intent, len(context or ""), pure_followup, query_was_rewritten,
         )
-        # Drop sources in fallback mode — the answer comes from AI knowledge,
-        # not from the retrieved context, so citing them would mislead.
-        if pure_followup and context:
+        # Drop sources only when we're genuinely answering from AI knowledge
+        # (stranded follow-up). When rewrite succeeded, sources WERE relevant
+        # so the MAIN branch keeps them — we never reach this branch in that
+        # case, but the inner condition is preserved for clarity.
+        if stranded_followup and context:
             sources = []
     else:
         system_prompt = select_main_prompt(sub_intent).format(context=context)
         logger.info(
             "generate_answer: using MAIN prompt for sub_intent=%s "
-            "(context=%d chars, sources=%d)",
-            sub_intent, len(context), len(sources),
+            "(context=%d chars, sources=%d, search_mode=%s, rewritten=%s)",
+            sub_intent, len(context), len(sources), search_mode, query_was_rewritten,
         )
 
     # Build messages list
