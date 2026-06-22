@@ -1,4 +1,4 @@
-"""Node 6: Output review — citation check + LLM semantic review"""
+"""Node 6: Output review — citation check + optional LLM semantic review"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import re
 
 from langchain_core.messages import HumanMessage
 
+from app.core.config import settings
 from app.graph.llm import invoke_llm
 from app.graph.prompts.review_output import REVIEW_OUTPUT_PROMPT
 from app.graph.state import RAGState
@@ -46,9 +47,14 @@ def _mechanical_check(answer: str, sources: list[dict], search_mode: str) -> str
 
 async def review_output(state: RAGState) -> dict:
     """Review generated answer for citation validity and content safety.
-    
-    Phase 1: Mechanical citation check (hard validation).
-    Phase 2: LLM semantic review (safety + factuality).
+
+    Phase 1: Mechanical citation check (always runs — hard validation).
+    Phase 2: LLM semantic review (optional, controlled by ``LLM_OUTPUT_REVIEW_ENABLED``).
+
+    The LLM reviewer is non-deterministic and can reject valid teaching
+    answers that naturally expand on source material with explanations
+    and analogies. It is disabled by default; the mechanical check and
+    upstream intent classification together provide sufficient guardrails.
     """
     answer = state.get("answer", "")
     sources = state.get("sources", [])
@@ -60,13 +66,17 @@ async def review_output(state: RAGState) -> dict:
         logger.info("No sources (fallback answer), auto-passing review")
         return {"review_result": "PASS", "matched_sources": []}
 
-    # Phase 1: Mechanical check
+    # Phase 1: Mechanical check (always)
     reject_reason = _mechanical_check(answer, sources, search_mode)
     if reject_reason:
         logger.warning("Mechanical check REJECT: %s", reject_reason)
         return {"review_result": "REJECT", "matched_sources": [], "rejection_category": "output_review"}
 
-    # Phase 2: LLM semantic review
+    # Phase 2: LLM semantic review (optional)
+    if not settings.LLM_OUTPUT_REVIEW_ENABLED:
+        logger.info("LLM output review disabled, PASS after mechanical check")
+        return {"review_result": "PASS", "matched_sources": sources}
+
     try:
         prompt = REVIEW_OUTPUT_PROMPT.format(
             question=question,

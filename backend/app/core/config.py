@@ -85,6 +85,14 @@ class Settings(BaseSettings):
     # ── 安全 ─────────────────────────────────
     PII_DETECTION_ENABLED: bool = True
     PROMPT_INJECTION_DETECTION_ENABLED: bool = True
+    # Output Review: when False, skip the LLM-based semantic review and only run
+    # the mechanical check (fake citations, empty answer). The LLM reviewer is
+    # non-deterministic — it occasionally rejects valid teaching answers as
+    # "fabrication" simply because they expand on sources with explanations,
+    # which is exactly what a teaching assistant should do. Default off: the
+    # mechanical check is enough; intent classification already catches unsafe
+    # content upstream.
+    LLM_OUTPUT_REVIEW_ENABLED: bool = False
 
     # ── CORS ─────────────────────────────────
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:5174"]
