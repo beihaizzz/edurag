@@ -339,6 +339,14 @@ async def ask_question(
                             else:
                                 yield f"event: classify\ndata: {json.dumps({'intent': intent})}\n\n"
 
+                        elif node_name == "rewrite_query":
+                            # Tell the frontend whether the LLM was actually invoked.
+                            # passthrough (was_rewritten=False) means the frontend can
+                            # skip the progress message entirely to avoid visual noise.
+                            was_rewritten = node_output.get("query_was_rewritten", False)
+                            rewritten = node_output.get("rewritten_question", "")
+                            yield f"event: rewrite\ndata: {json.dumps({'was_rewritten': was_rewritten, 'rewritten': rewritten})}\n\n"
+
                         elif node_name == "rag_search":
                             has = node_output.get("has_internal_results", False)
                             count = len(node_output.get("internal_results", []))
