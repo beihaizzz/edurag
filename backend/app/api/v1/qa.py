@@ -606,10 +606,25 @@ async def get_session_detail(
         chat_history = []
         if graph_state and graph_state.values:
             history = graph_state.values.get("chat_history", [])
-            chat_history = [
-                {"role": m.get("role", "user"), "content": m.get("content", "")}
-                for m in history
-            ]
+            # Pass through sources / is_rejected / rejection_reason so the
+            # frontend can render citations and rejection bubbles when the
+            # user re-opens a saved session from the sidebar. The role/content
+            # fields are guaranteed; the rest are optional.
+            chat_history = []
+            for m in history:
+                entry = {
+                    "role": m.get("role", "user"),
+                    "content": m.get("content", ""),
+                }
+                if m.get("role") == "assistant":
+                    if "sources" in m:
+                        entry["sources"] = m.get("sources") or []
+                    if m.get("is_rejected"):
+                        entry["isRejected"] = True
+                        rr = m.get("rejection_reason") or ""
+                        if rr:
+                            entry["rejectionReason"] = rr
+                chat_history.append(entry)
     except Exception:
         logger.exception("Failed to load graph state for session %d", session_id)
         chat_history = []

@@ -20,7 +20,11 @@ _DEFAULT_REJECT = "抱歉，无法处理您的请求。请稍后重试。"
 
 
 async def reject(state: RAGState) -> dict:
-    """Return appropriate rejection message based on rejection_category."""
+    """Return appropriate rejection message based on rejection_category.
+
+    Also appends the rejected turn to chat_history so the rejection is
+    visible when the user re-opens this session from the sidebar.
+    """
     category = state.get("rejection_category", "no_results")
     reason = _REJECTION_MESSAGES.get(category, _DEFAULT_REJECT)
 
@@ -35,4 +39,13 @@ async def reject(state: RAGState) -> dict:
         "is_rejected": True,
         "rejection_reason": reason,
         "rejection_category": category,
+        "chat_history": [
+            {"role": "user", "content": state.get("question", "")},
+            {
+                "role": "assistant",
+                "content": reason,
+                "is_rejected": True,
+                "rejection_reason": reason,
+            },
+        ],
     }

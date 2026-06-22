@@ -14,10 +14,17 @@ async def return_answer(state: RAGState) -> dict:
     answer = state.get("answer", "")
     question = state.get("question", "")
 
-    # Build the history update (Annotated[list, operator.add] handles append)
+    # Build the history update (Annotated[list, operator.add] handles append).
+    # Include sources and is_rejected so that loading a saved session from the
+    # sidebar shows citations and rejection status correctly.
     new_entries = [
         {"role": "user", "content": question},
-        {"role": "assistant", "content": answer},
+        {
+            "role": "assistant",
+            "content": answer,
+            "sources": state.get("sources", []),
+            "is_rejected": False,
+        },
     ]
 
     current_history = state.get("chat_history", [])
