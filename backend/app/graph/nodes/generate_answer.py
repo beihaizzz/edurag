@@ -56,6 +56,60 @@ def _is_pure_followup(question: str, sub_intent: str = "") -> bool:
     return bool(_PURE_FOLLOWUP_RE.match(question)) and len(question) <= 12
 
 
+# Matches an "answer" key in a (possibly malformed) JSON-ish blob:
+#   "answer": "the actual answer text..."
+# Captures everything up to the next unescaped quote that closes the value.
+# This is a recovery path for when json.loads fails on real newlines inside
+# string values — happens occasionally with DeepSeek even with json_object mode.
+_JSON_ANSWER_RE = re.compile(
+    r'"answer"\s*:\s*"((?:[^"\\]|\\.)*)"',
+    re.DOTALL,
+)
+
+# Strip surrounding JSON-object syntax when ALL recovery has failed, so the
+# user doesn't see `{"answer": "..."` literally. This is a best-effort cleanup.
+_JSON_OBJECT_WRAP_RE = re.compile(
+    r'^\s*\{\s*"answer"\s*:\s*"?(.*?)"?\s*,?\s*"citations"\s*:\s*\[[^\]]*\]\s*\}\s*$',
+    re.DOTALL,
+)
+
+
+def _extract_answer_from_broken_json(raw: str) -> str:
+    """Best-effort: pull the 'answer' field's value out of a malformed JSON string.
+
+    Returns the unescaped answer text on success, or empty string on failure.
+    Handles common JSON escape sequences (\\n, \\t, \\", \\\\) found in
+    LLM-generated output.
+    """
+    match = _JSON_ANSWER_RE.search(raw)
+    if not match:
+        return ""
+    text = match.group(1)
+    # Unescape common sequences. We avoid full json.loads on the captured
+    # string because the original failure was due to invalid escapes/newlines.
+    text = (
+        text
+        .replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace('\\"', '"')
+        .replace("\\\\", "\\")
+    )
+    return text.strip()
+
+
+def _strip_json_wrapping(raw: str) -> str:
+    """Last-ditch cleanup: if raw looks like a JSON object literal, strip the wrapping.
+
+    Returns the inner answer text on match, or the original raw text on
+    failure. This ensures the user never sees literal ``{"answer":`` syntax
+    even when both json.loads and regex extraction fail.
+    """
+    match = _JSON_OBJECT_WRAP_RE.match(raw)
+    if match:
+        return match.group(1).strip()
+    return raw.strip()
+
+
 async def generate_answer(state: RAGState) -> dict:
     """Generate answer using context + chat history via DeepSeek (JSON mode).
 
@@ -159,69 +213,23 @@ async def generate_answer(state: RAGState) -> dict:
         }
 
     except json.JSONDecodeError:
+        # DeepSeek's response_format=json_object isn't always honored. When
+        # the LLM returns malformed JSON (e.g. real newlines inside string
+        # values), strict json.loads fails. Two recovery strategies before
+        # giving up and dumping raw JSON as the answer text:
+        #
+        # 1. Try lenient parse: extract the "answer" field with a regex
+        # 2. Fall back to the raw text (least bad option — answer at least
+        #    contains the content, even if wrapped in JSON syntax)
         logger.warning("LLM returned non-JSON despite response_format; raw=%s", raw[:200])
-        return {"answer": raw}
-    except Exception:
-        logger.exception("Answer generation failed")
-        return {"answer": "抱歉，答案生成过程中出现错误，请稍后重试。"}
-
-    # Build messages list
-    messages: list = [SystemMessage(content=system_prompt)]
-
-    # Add recent chat history (last N turns only for token efficiency)
-    if chat_history:
-        recent = chat_history[-(MAX_CHAT_HISTORY_TURNS * 2):]
-        for msg in recent:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if role == "user":
-                messages.append(HumanMessage(content=content))
-            else:
-                messages.append(AIMessage(content=content))
-
-    # Add current question
-    user_message = f"Question: {question}\n\nSearch mode: {search_mode}"
-    messages.append(HumanMessage(content=user_message))
-
-    try:
-        raw = await invoke_llm(
-            messages,
-            temperature=0,
-            # DeepSeek docs explicitly warn: "Set max_tokens high enough that
-            # the output cannot be truncated mid-object" when using JSON mode.
-            # Without this cap the API uses an internal default that produces
-            # short answers; 4096 is comfortable for our citation-wrapped JSON
-            # responses while staying well within model limits (V4 → 384K max).
-            max_tokens=4096,
-            timeout=60.0,
-            model_kwargs={"response_format": {"type": "json_object"}},
-        )
-        logger.info("Answer generated: %d chars (raw)", len(raw))
-
-        # Parse JSON response
-        parsed = json.loads(raw)
-        answer = parsed.get("answer", "")
-        citation_indices: list[int] = parsed.get("citations", [])
-
-        # Filter sources to only those actually cited
-        cited_sources = [
-            s for s in sources
-            if s.get("index") in citation_indices
-        ]
-
-        logger.info(
-            "Parsed: answer=%d chars, citations=%s, cited_sources=%d",
-            len(answer), citation_indices, len(cited_sources),
-        )
-
-        return {
-            "answer": answer,
-            "sources": cited_sources,
-        }
-
-    except json.JSONDecodeError:
-        logger.warning("LLM returned non-JSON despite response_format; raw=%s", raw[:200])
-        return {"answer": raw}
+        recovered = _extract_answer_from_broken_json(raw)
+        if recovered:
+            logger.info("Recovered answer from malformed JSON (%d chars)", len(recovered))
+            return {"answer": recovered, "sources": []}
+        # Final fallback: strip leading/trailing JSON braces if present so the
+        # user at least doesn't see raw JSON syntax
+        cleaned = _strip_json_wrapping(raw)
+        return {"answer": cleaned, "sources": []}
     except Exception:
         logger.exception("Answer generation failed")
         return {"answer": "抱歉，答案生成过程中出现错误，请稍后重试。"}
