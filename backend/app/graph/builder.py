@@ -20,6 +20,7 @@ from app.graph.nodes.rerank import rerank
 from app.graph.nodes.reject import reject
 from app.graph.nodes.return_answer import return_answer
 from app.graph.nodes.review_output import review_output
+from app.graph.nodes.rewrite_query import rewrite_query
 from app.graph.nodes.web_search import web_search
 from app.graph.state import RAGState
 
@@ -27,10 +28,11 @@ logger = logging.getLogger(__name__)
 
 
 async def build_rag_graph() -> StateGraph:
-    """Build and compile the RAG StateGraph with 9 nodes and 4 conditional edges.
+    """Build and compile the RAG StateGraph with 10 nodes and 4 conditional edges.
     
     Graph topology:
-    START → classify_intent → [NORMAL→rag_search | other→reject]
+    START → classify_intent → [NORMAL→rewrite_query | other→reject]
+    rewrite_query → rag_search
     rag_search → rerank
     rerank → [has_results→build_context | web_on→web_search | web_off→generate_answer]
     build_context → generate_answer
@@ -41,8 +43,9 @@ async def build_rag_graph() -> StateGraph:
     """
     builder = StateGraph(RAGState)
 
-    # Register all 9 nodes
+    # Register all 10 nodes
     builder.add_node("classify_intent", classify_intent)
+    builder.add_node("rewrite_query", rewrite_query)
     builder.add_node("rag_search", rag_search)
     builder.add_node("rerank", rerank)
     builder.add_node("build_context", build_context)
@@ -58,8 +61,11 @@ async def build_rag_graph() -> StateGraph:
     builder.add_conditional_edges(
         "classify_intent",
         route_after_classify,
-        {"rag_search": "rag_search", "reject": "reject"},
+        {"rewrite_query": "rewrite_query", "reject": "reject"},
     )
+
+    # rewrite_query → rag_search (straight edge)
+    builder.add_edge("rewrite_query", "rag_search")
 
     # rag_search → rerank (straight edge)
     builder.add_edge("rag_search", "rerank")

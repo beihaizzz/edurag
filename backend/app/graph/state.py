@@ -5,6 +5,8 @@ import operator
 class RAGState(TypedDict, total=False):
     chat_history: Annotated[list[dict], operator.add]  # 多轮累积
     question: str
+    rewritten_question: str          # 改写后的独立搜索 query（由 rewrite_query 节点生成）
+    query_was_rewritten: bool        # rewrite_query 是否真的调用了 LLM 改写（vs passthrough）
     course_id: int | None
     use_web_search: bool
     intent: str                        # NORMAL | CHEATING | SENSITIVE | ATTACK

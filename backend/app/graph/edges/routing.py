@@ -6,10 +6,10 @@ from app.graph.state import RAGState
 
 
 def route_after_classify(state: RAGState) -> str:
-    """After intent classification: route to rag_search or reject."""
+    """After intent classification: route to rewrite_query (NORMAL) or reject."""
     intent = state.get("intent", "NORMAL")
     if intent == "NORMAL":
-        return "rag_search"
+        return "rewrite_query"
     return "reject"
 
 

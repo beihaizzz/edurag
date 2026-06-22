@@ -39,6 +39,10 @@ async def rag_search(state: RAGState) -> dict:
     Applies similarity threshold from settings.
     """
     question = state.get("question", "")
+    # Use the rewritten query if the rewrite_query node produced one; otherwise
+    # fall back to the original question (e.g. when rewriting is disabled or
+    # the node was bypassed).
+    search_query = state.get("rewritten_question") or question
     course_id = state.get("course_id")
 
     # Use different fetch size depending on whether reranker follows
@@ -46,7 +50,7 @@ async def rag_search(state: RAGState) -> dict:
 
     try:
         results = await vector_store.search(
-            query=question,
+            query=search_query,
             top_k=fetch_k,
             where_filter={"course_id": course_id} if course_id else None,
         )

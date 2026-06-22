@@ -70,6 +70,18 @@ class Settings(BaseSettings):
     RERANKER_TIMEOUT: float = 10.0
     RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
 
+    # ── Query Rewrite（多轮追问改写）─────────
+    # When True, the rewrite_query node uses the LLM to expand follow-up
+    # questions like "可以更详细的讲讲吗" into self-contained search
+    # queries before vector retrieval. Disable to fall back to the raw
+    # current-turn question (current = behaviour before this feature).
+    QUERY_REWRITE_ENABLED: bool = True
+    # Max conversation turns to feed into the rewrite prompt (each turn =
+    # user + assistant pair). Keeping this small keeps the rewrite call
+    # fast and cheap; the most recent turn is usually the only one the
+    # follow-up refers to.
+    QUERY_REWRITE_HISTORY_TURNS: int = 3
+
     # ── 安全 ─────────────────────────────────
     PII_DETECTION_ENABLED: bool = True
     PROMPT_INJECTION_DETECTION_ENABLED: bool = True
