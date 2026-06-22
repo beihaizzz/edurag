@@ -4,11 +4,33 @@ FastAPI 应用入口
 """
 
 import asyncio
+import logging
 import sys
 
 # Windows: psycopg 异步模式必须使用 SelectorEventLoop
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+# Configure root logger so logger.info() calls in app.* modules actually
+# emit. Without this, Python's default WARNING level silently drops all
+# INFO logs from the RAG graph, making debugging impossible.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    force=True,  # override any prior basicConfig (e.g. from SQLAlchemy)
+)
+# Also write to file for Sisyphus to inspect. Idempotent across uvicorn
+# --reload restarts: replace any prior FileHandler instead of accumulating.
+_root = logging.getLogger()
+for _h in list(_root.handlers):
+    if isinstance(_h, logging.FileHandler):
+        _root.removeHandler(_h)
+        _h.close()
+_file_handler = logging.FileHandler("logs/app.log", mode="a", encoding="utf-8")
+_file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
+_root.addHandler(_file_handler)
+# Quiet down SQLAlchemy engine spam — we already see it via its own logger
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 from contextlib import asynccontextmanager
 
