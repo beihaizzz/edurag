@@ -11,14 +11,14 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import delete, desc, select, func
+from sqlalchemy import Integer, cast, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.deps import get_current_user
 from app.graph.builder import build_rag_graph
 from app.graph.state import RAGState
-from app.models import Feedback, QAHistory, User, UserSession
+from app.models import Document, Feedback, QAHistory, User, UserSession
 from app.schemas.common import APIResponse, PaginatedData
 from app.schemas.search import QaCreate
 
@@ -279,12 +279,40 @@ async def list_qa_records(
     Powers the student "问答历史" page (`/student/history`). Unlike
     ``GET /qa/sessions`` which groups by ``user_sessions``, this returns
     every individual Q&A turn from the ``qa_history`` table.
+
+    Course filtering matches by the **referenced source documents' course**,
+    not by ``QAHistory.course_id`` (which records what the user picked at
+    ask-time and is often null). We expand ``sources`` JSONB → extract
+    ``document_id`` → join ``documents`` → filter by ``documents.course_id``.
     """
     offset = (page - 1) * page_size
 
     base_filters = [QAHistory.user_id == user.id]
+
     if course_id is not None:
-        base_filters.append(QAHistory.course_id == course_id)
+        # Course filter is a correlated EXISTS: keep the QAHistory row if
+        # any element in its `sources` JSONB array references a document
+        # belonging to the requested course.
+        #
+        # Generated SQL (roughly):
+        #   EXISTS (
+        #     SELECT 1
+        #     FROM jsonb_array_elements(qa_history.sources) AS src,
+        #          documents d
+        #     WHERE d.id = (src->>'document_id')::int
+        #       AND d.course_id = :course_id
+        #   )
+        src = func.jsonb_array_elements(QAHistory.sources).column_valued("src")
+        course_exists = (
+            select(1)
+            .where(
+                Document.id == cast(src.op("->>")("document_id"), Integer),
+                Document.course_id == course_id,
+            )
+            .correlate(QAHistory)
+            .exists()
+        )
+        base_filters.append(course_exists)
 
     count_stmt = select(func.count()).select_from(QAHistory).where(*base_filters)
     total = (await db.execute(count_stmt)).scalar() or 0
