@@ -58,6 +58,12 @@ async def generate_answer(state: RAGState) -> dict:
         raw = await invoke_llm(
             messages,
             temperature=0,
+            # DeepSeek docs explicitly warn: "Set max_tokens high enough that
+            # the output cannot be truncated mid-object" when using JSON mode.
+            # Without this cap the API uses an internal default that produces
+            # short answers; 4096 is comfortable for our citation-wrapped JSON
+            # responses while staying well within model limits (V4 → 384K max).
+            max_tokens=4096,
             timeout=60.0,
             model_kwargs={"response_format": {"type": "json_object"}},
         )
