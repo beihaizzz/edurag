@@ -304,9 +304,20 @@ export default function QAPage() {
           }
 
           switch (currentEvent) {
-            case 'classify':
+case 'classify':
                   updateMsg(() => ({ progress: '正在识别问题意图...' }))
               break
+
+            case 'rewrite': {
+              const wasRewritten = payload.was_rewritten as boolean
+              if (wasRewritten) {
+                updateMsg(() => ({ progress: '正在结合上下文理解问题...' }))
+              }
+              // passthrough (was_rewritten=false): keep existing progress,
+              // don't overwrite — "正在识别问题意图..." flows naturally
+              // into the next event (retrieve).
+              break
+            }
 
             case 'retrieve': {
               const src = payload.source === 'web' ? '网络' : '课程'
