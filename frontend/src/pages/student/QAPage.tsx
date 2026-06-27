@@ -461,7 +461,45 @@ export default function QAPage() {
         const d = r.data.data
         setActiveThreadId(d.thread_id)
         setActiveSessionId(d.id)
-        setMessages(d.chat_history)
+        // 历史消息的推理 steps 没持久化（后端 chat_history 只存 role/content/sources/is_rejected）。
+        // 为每条 assistant 消息合成一个"全部完成"的 steps 骨架，让推理框在刷新后仍存在：
+        // - 有 sources → grounded 路径
+        // - 无 sources 且非 reject → fallback 路径（基于 AI 知识）
+        // - is_rejected → 无需 steps
+        setMessages(d.chat_history.map((m) => {
+          if (m.role !== 'assistant' || m.isRejected) return m
+          if (m.steps && m.steps.length > 0) return m  // 兜底：若未来后端持久化了 steps
+          const hasSources = !!m.sources && m.sources.length > 0
+          const steps: NodeStep[] = makeInitialSteps().map((s) => {
+            if (s.key === 'rewrite') {
+              // 历史回放无法区分 rewrite 是否实际触发，统一标 done（不显示 detail）
+              return { ...s, state: 'done' as NodeState }
+            }
+            if (s.key === 'retrieve') {
+              return {
+                ...s,
+                state: 'done' as NodeState,
+                detail: hasSources ? `命中课程资料 ${m.sources!.length} 条` : '无相关资料',
+              }
+            }
+            if (s.key === 'rerank') {
+              return {
+                ...s,
+                state: 'done' as NodeState,
+                detail: hasSources ? undefined : '无相关结果',
+              }
+            }
+            if (s.key === 'generate') {
+              return {
+                ...s,
+                state: 'done' as NodeState,
+                detail: hasSources ? undefined : '基于 AI 知识',
+              }
+            }
+            return { ...s, state: 'done' as NodeState }
+          })
+          return { ...m, steps, streaming: false }
+        }))
       }
     } catch (e) { console.error('加载会话详情失败', e) }
     finally { setLoadingSession(false) }
