@@ -7,6 +7,7 @@ const navItems = [
   { path: '/teacher/courses', label: '课程管理' },
   { path: '/teacher/documents/upload', label: '上传资料' },
   { path: '/teacher/documents', label: '文档管理' },
+  { path: '/teacher/qa-insights', label: '问答洞察' },
 ]
 
 export default function TeacherLayout() {

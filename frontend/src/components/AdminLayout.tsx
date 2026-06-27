@@ -6,6 +6,7 @@ const navItems = [
   { path: '/admin', label: '仪表盘' },
   { path: '/admin/review', label: '文档审核' },
   { path: '/admin/users', label: '用户管理' },
+  { path: '/admin/qa-insights', label: '问答洞察' },
   { path: '/admin/audit-logs', label: '操作日志' },
 ]
 

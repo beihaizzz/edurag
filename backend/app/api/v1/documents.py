@@ -16,7 +16,7 @@ from sqlalchemy.orm import joinedload
 from app.core.config import settings
 from app.core.database import get_db
 from app.deps import get_current_user, require_role
-from app.models import Chunk, Document, User
+from app.models import Chunk, Document, DocumentAuditLog, User
 from app.schemas.common import APIResponse, PaginatedData
 from app.schemas.document import (
     ChunkPreview,
@@ -109,6 +109,35 @@ async def upload_document(
             detail=f"文件大小不能超过 {settings.MAX_UPLOAD_SIZE_MB} MB",
         )
 
+    # ── SHA-256 查重：内容哈希一致则直接拒绝上传 ──
+    # 早于写盘 / 解析 tags / 入库，避免无效落盘与重复算力消耗
+    file_hash = hashlib.sha256(content).hexdigest()
+    existing = await db.scalar(
+        select(Document)
+        .options(joinedload(Document.uploader), joinedload(Document.course))
+        .where(Document.file_hash == file_hash)
+    )
+    if existing is not None:
+        uploader_name = (
+            existing.uploader.real_name or existing.uploader.username
+            if existing.uploader else "未知用户"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "已存在相同内容的文档，禁止重复上传",
+                "existing_document": {
+                    "id": existing.id,
+                    "title": existing.title,
+                    "filename": existing.filename,
+                    "uploader": uploader_name,
+                    "course_id": existing.course_id,
+                    "status": existing.status,
+                    "created_at": existing.created_at.isoformat() if existing.created_at else None,
+                },
+            },
+        )
+
     # ── 解析 tags ──
     try:
         tag_list: list[str] = json.loads(tags)
@@ -130,11 +159,7 @@ async def upload_document(
     async with aiofiles.open(dest_path, "wb") as f:
         await f.write(content)
 
-    # ── 计算 SHA-256 ──
-    try:
-        file_hash = _compute_sha256(dest_path)
-    except OSError:
-        file_hash = None
+    # file_hash 已在查重阶段算好，无需重复读盘
 
     # ── 写入数据库 ──
     doc = Document(
@@ -423,7 +448,12 @@ async def approve_document(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role("admin")),
 ):
-    """审核文档（仅管理员）"""
+    """审核文档（仅管理员）
+
+    - 通过：状态置为 approved 并启动后台解析/向量化管线
+    - 驳回：状态置为 rejected，需登记驳回原因（comment）
+    - 每次审核动作写入 ``document_audit_logs``，保留完整轨迹（不覆盖历史）
+    """
     doc = await db.scalar(
         select(Document)
         .options(joinedload(Document.course), joinedload(Document.uploader))
@@ -435,9 +465,26 @@ async def approve_document(
             detail="文档不存在",
         )
 
+    # 驳回必须提供原因
+    if body.status == "rejected" and not (body.comment or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="驳回操作必须填写驳回原因",
+        )
+
+    previous_status = doc.status
     doc.status = body.status
     doc.audit_comment = body.comment
     doc.auditor_id = user.id
+
+    # 完整审核轨迹：每次审核记一行（同一文档可有多次审核记录）
+    db.add(DocumentAuditLog(
+        document_id=document_id,
+        auditor_id=user.id,
+        action=body.status,
+        comment=body.comment or None,
+        previous_status=previous_status,
+    ))
 
     if body.status == "approved":
         background_tasks.add_task(_run_pipeline_background, document_id)
@@ -445,18 +492,66 @@ async def approve_document(
     await db.commit()
     await db.refresh(doc, attribute_names=["course", "uploader"])
 
+    # 通用操作日志（仪表盘/全局审计用，仅写一次）
     await log_action(db, user.id, "approve_doc", {
         "doc_id": document_id, "title": doc.title, "status": body.status,
-    })
-
-    await log_action(db, user.id, "approve_doc", {
-        "doc_id": document_id, "title": doc.title, "status": body.status,
+        "comment": body.comment or "",
     })
 
     return APIResponse(
         message="审核完成",
         data=DocumentDetail.model_validate(doc).model_dump(mode="json"),
     )
+
+
+# ── GET /documents/{id}/audit-history ─────────────────────────────────
+
+
+@router.get("/documents/{document_id}/audit-history")
+async def get_document_audit_history(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin", "teacher")),
+):
+    """获取指定文档的完整审核历史（按时间倒序）
+
+    管理员看全部；教师仅能看自己上传的文档（防止越权窥探他人审核记录）。
+    """
+    doc = await db.scalar(select(Document).where(Document.id == document_id))
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文档不存在")
+
+    if _user.role == "teacher" and doc.uploader_id != _user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只能查看自己上传文档的审核记录")
+
+    stmt = (
+        select(DocumentAuditLog)
+        .options(joinedload(DocumentAuditLog.auditor))
+        .where(DocumentAuditLog.document_id == document_id)
+        .order_by(DocumentAuditLog.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+
+    return APIResponse(data={
+        "document_id": document_id,
+        "title": doc.title,
+        "current_status": doc.status,
+        "items": [
+            {
+                "id": r.id,
+                "action": r.action,
+                "comment": r.comment,
+                "previous_status": r.previous_status,
+                "auditor_id": r.auditor_id,
+                "auditor_name": (
+                    r.auditor.real_name or r.auditor.username
+                    if r.auditor else None
+                ),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    })
 
 
 # ── POST /documents/{id}/process ──────────────────────────────────────

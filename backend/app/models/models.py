@@ -16,7 +16,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -108,7 +108,12 @@ class Document(Base):
 
     course = relationship("Course", back_populates="documents")
     uploader = relationship("User", back_populates="documents", foreign_keys=[uploader_id])
-    chunks = relationship("Chunk", back_populates="document", cascade="all, delete-orphan")
+    chunks = relationship(
+        "Chunk",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     def __repr__(self):
         return f"<Document(id={self.id}, title={self.title})>"
@@ -198,6 +203,39 @@ class AuditLog(Base):
     detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# DocumentAuditLog — 文档审核完整轨迹（每次审核留一条）
+# ═══════════════════════════════════════════════════════════════════════
+
+class DocumentAuditLog(Base):
+    """文档审核日志（与 AuditLog 通用日志区别：专记审核动作，含驳回原因，按文档可追溯）"""
+    __tablename__ = "document_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    auditor_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    action: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="approved / rejected"
+    )
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True, comment="驳回原因或备注")
+    previous_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # 删文档时由 DB 的 ON DELETE CASCADE 级联删审核日志；
+    # passive_deletes=True 让 SQLAlchemy 不再先把 document_id 置 NULL（会撞 NOT NULL）。
+    document = relationship(
+        "Document",
+        backref=backref(
+            "audit_logs",
+            cascade="all, delete-orphan",
+            passive_deletes=True,
+        ),
+    )
+    auditor = relationship("User", foreign_keys=[auditor_id])
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -1,10 +1,6 @@
-import { useState, useRef, type CSSProperties } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Inline SVG Icons
-   ═══════════════════════════════════════════════════════════════════════ */
 
 function UserIcon() {
   return (
@@ -24,19 +20,15 @@ function LockIcon() {
   )
 }
 
-function EyeOffIcon() {
-  return (
+function EyeIcon({ open }: { open: boolean }) {
+  return open ? (
     <svg width={20} height={20} viewBox="0 0 20 20" fill="none">
-      <path d="M2.5 2.5L17.5 17.5" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
       <path d="M10 5C5.6 5 2 7.3.4 10c-.3.5-.3 1.1 0 1.5C2 14.2 5.6 16.5 10 16.5s8-2.3 9.6-5c.3-.5.3-1.1 0-1.5C18 7.3 14.4 5 10 5z" stroke="currentColor" strokeWidth={1.5} />
       <circle cx={10} cy={10.8} r={2.5} stroke="currentColor" strokeWidth={1.5} />
     </svg>
-  )
-}
-
-function EyeOnIcon() {
-  return (
+  ) : (
     <svg width={20} height={20} viewBox="0 0 20 20" fill="none">
+      <path d="M2.5 2.5L17.5 17.5" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
       <path d="M10 5C5.6 5 2 7.3.4 10c-.3.5-.3 1.1 0 1.5C2 14.2 5.6 16.5 10 16.5s8-2.3 9.6-5c.3-.5.3-1.1 0-1.5C18 7.3 14.4 5 10 5z" stroke="currentColor" strokeWidth={1.5} />
       <circle cx={10} cy={10.8} r={2.5} stroke="currentColor" strokeWidth={1.5} />
     </svg>
@@ -61,334 +53,310 @@ function SuccessIcon() {
   )
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Styles
-   ═══════════════════════════════════════════════════════════════════════ */
+type Field = 'username' | 'password' | 'confirmPw'
 
-const styles = {
-  container: {
-    display: 'flex',
-    height: '100vh',
+const styles: Record<string, CSSProperties> = {
+  page: {
+    minHeight: '100vh',
     overflow: 'hidden',
-    fontFamily: "'Inter', system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif",
-  } as CSSProperties,
-
-  /* ── Left Brand Panel ── */
-  brandPanel: {
     position: 'relative',
-    overflow: 'hidden',
-  } as CSSProperties,
-
-  brandOverlay: {
-    position: 'absolute',
-    inset: 0,
-    background: 'linear-gradient(to bottom right, rgba(49,46,129,0.6), rgba(49,46,129,0.25), rgba(55,48,163,0.5))',
-  } as CSSProperties,
-
-  brandContent: {
+    background: 'radial-gradient(ellipse at 50% 30%, #0f2847 0%, #091625 42%, #040b14 100%)',
+    color: '#e8f5fb',
+  },
+  layout: {
     position: 'relative',
-    zIndex: 10,
+    zIndex: 15,
+    minHeight: '100vh',
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 48,
+    padding: '32px',
+  },
+  sealPanel: {
+    width: 420,
+    height: 500,
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    perspective: 800,
+  },
+  sealWrapper: {
+    position: 'relative',
+    width: 300,
+    height: 300,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'transform 0.18s ease-out',
+    filter: 'drop-shadow(0 0 32px rgba(111,182,220,0.18))',
+  },
+  sealImg: {
     width: '100%',
     height: '100%',
-    textAlign: 'center',
-    color: '#fff',
-    padding: '48px',
-  } as CSSProperties,
-
-  logo: {
-    width: 56,
-    height: 48,
-    filter: 'drop-shadow(0 0 12px rgba(134,59,255,0.5))',
-  } as CSSProperties,
-
-  brandName: {
-    fontSize: 30,
-    fontWeight: 800,
-    letterSpacing: '0.05em',
-    textShadow: '0 0 40px rgba(134,59,255,0.5)',
-    marginTop: 12,
-  } as CSSProperties,
-
-  slogan: {
-    fontSize: 28,
-    fontWeight: 600,
-    lineHeight: 1.5,
-    maxWidth: 320,
-    marginTop: 40,
-  } as CSSProperties,
-
-  brandDesc: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
-    letterSpacing: '0.05em',
-    maxWidth: 320,
-    marginTop: 16,
-  } as CSSProperties,
-
-  /* ── Right Form Panel ── */
-  formPanel: {
-    flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '24px',
-    background: '#f8fafc',
-  } as CSSProperties,
-
-  formCard: {
+    objectFit: 'contain',
+    transform: 'scaleX(-1)',
+    userSelect: 'none',
+  },
+  card: {
     width: '100%',
     maxWidth: 420,
-  } as CSSProperties,
-
-  mobileLogo: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 20,
-    textAlign: 'center',
-  } as CSSProperties,
-
-  mobileLogoImg: {
-    width: 40,
-    height: 34,
-  } as CSSProperties,
-
-  mobileLogoText: {
-    fontSize: 20,
-    fontWeight: 800,
-    color: '#0f172a',
-  } as CSSProperties,
-
-  mobileLogoDesc: {
-    fontSize: 13,
-    color: '#64748b',
-    marginTop: 2,
-  } as CSSProperties,
-
-  welcomeTitle: {
-    fontSize: 36,
-    fontWeight: 700,
-    color: '#0f172a',
-    marginBottom: 8,
-  } as CSSProperties,
-
-  welcomeSub: {
-    fontSize: 15,
-    color: '#64748b',
-    marginBottom: 28,
-  } as CSSProperties,
-
-  field: {
-    marginBottom: 16,
-  } as CSSProperties,
-
-  label: {
-    display: 'block',
-    fontSize: 14,
-    fontWeight: 500,
-    color: '#334155',
-    marginBottom: 6,
-  } as CSSProperties,
-
-  required: {
-    color: '#ef4444',
-  } as CSSProperties,
-
-  inputWrapper: {
+    padding: '42px 34px 34px',
+    borderRadius: 8,
+    background: 'rgba(255,255,255,0.075)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    boxShadow: '0 24px 70px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08)',
+    backdropFilter: 'blur(24px)',
+  },
+  logo: {
+    width: 62,
+    height: 62,
+    objectFit: 'cover',
+    borderRadius: 16,
+    boxShadow: '0 18px 36px rgba(47,128,183,0.28)',
+    border: '1px solid rgba(255,255,255,0.16)',
+  },
+  inputWrap: {
     position: 'relative',
     borderRadius: 8,
-    border: '1px solid #e2e8f0',
-    background: '#fff',
+    border: '1px solid rgba(207,231,244,0.28)',
+    background: 'rgba(255,255,255,0.055)',
     transition: 'all 0.2s',
-  } as CSSProperties,
-
+  },
   inputIcon: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
+    left: 14,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: 'rgba(168,214,238,0.58)',
     display: 'flex',
-    alignItems: 'center',
-    paddingLeft: 14,
-    color: '#94a3b8',
-    pointerEvents: 'none',
-  } as CSSProperties,
-
+  },
   input: {
     width: '100%',
-    padding: '12px 48px 12px 42px',
-    background: 'transparent',
+    padding: '13px 46px 13px 44px',
     border: 'none',
     outline: 'none',
+    background: 'transparent',
+    color: '#f8fcff',
     fontSize: 14,
-    color: '#0f172a',
-    borderRadius: 8,
     boxSizing: 'border-box',
-  } as CSSProperties,
-
-  toggleBtn: {
+  },
+  toggle: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
-    right: 0,
-    display: 'flex',
-    alignItems: 'center',
-    paddingRight: 14,
-    color: '#94a3b8',
-    cursor: 'pointer',
-    background: 'none',
+    right: 10,
+    top: '50%',
+    transform: 'translateY(-50%)',
     border: 'none',
-  } as CSSProperties,
-
-  fieldError: {
-    fontSize: 12,
-    color: '#dc2626',
-    marginTop: 4,
-    marginLeft: 4,
-  } as CSSProperties,
-
-  submitBtn: {
+    background: 'transparent',
+    color: 'rgba(168,214,238,0.58)',
+    cursor: 'pointer',
+    padding: 4,
+    display: 'flex',
+  },
+  submit: {
     width: '100%',
-    padding: '12px 16px',
-    background: '#6366F1',
-    color: '#fff',
-    fontWeight: 600,
-    fontSize: 14,
+    padding: '13px 18px',
     border: 'none',
     borderRadius: 8,
+    color: '#fff',
+    background: 'linear-gradient(135deg, #2f80b7, #56a9d3)',
+    fontSize: 14,
+    fontWeight: 700,
     cursor: 'pointer',
-    marginTop: 8,
-    display: 'flex',
+    boxShadow: '0 14px 26px rgba(47,128,183,0.28)',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    transition: 'all 0.2s',
-    position: 'relative',
-    overflow: 'hidden',
-  } as CSSProperties,
-
-  formError: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 8,
-    background: '#fef2f2',
-    border: '1px solid #fecaca',
-    color: '#b91c1c',
-    fontSize: 13,
-    marginBottom: 16,
-  } as CSSProperties,
-
-  formSuccess: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 8,
-    background: '#ecfdf5',
-    border: '1px solid #a7f3d0',
-    color: '#047857',
-    fontSize: 13,
-    marginBottom: 16,
-  } as CSSProperties,
-
-  loginLink: {
-    textAlign: 'center',
-    marginTop: 24,
-    fontSize: 14,
-    color: '#64748b',
-  } as CSSProperties,
+  },
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Component
-   ═══════════════════════════════════════════════════════════════════════ */
+const css = `
+  body { overflow: hidden; }
+  .login-star {
+    position: absolute;
+    border-radius: 50%;
+    background: #fff;
+    animation: loginTwinkle var(--dur) ease-in-out infinite;
+    animation-delay: var(--delay);
+  }
+  @keyframes loginTwinkle { 0%,100% { opacity: .14; } 50% { opacity: .85; } }
+  @keyframes loginFlyby { from { transform: translateX(-240px); } to { transform: translateX(calc(100vw + 240px)); } }
+  @keyframes loginSpeed { from { left: 120%; opacity: .28; } to { left: -30%; opacity: 0; } }
+  @keyframes loginSpin { to { transform: rotate(360deg); } }
+  @keyframes loginShake {
+    0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)}
+    40%{transform:translateX(4px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)}
+  }
+  @keyframes loginFadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .login-field { animation: loginFadeUp .42s ease-out both; }
+  .login-field:nth-child(1) { animation-delay: .04s; }
+  .login-field:nth-child(2) { animation-delay: .1s; }
+  .login-field:nth-child(3) { animation-delay: .16s; }
+  .login-field:nth-child(4) { animation-delay: .22s; }
+  .login-field:nth-child(5) { animation-delay: .28s; }
+  .login-shake { animation: loginShake .4s ease-out; }
+  .login-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,.35);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: loginSpin .7s linear infinite;
+  }
+  .login-ship {
+    position: fixed;
+    top: 22%;
+    left: 0;
+    width: 112px;
+    height: 18px;
+    z-index: 5;
+    pointer-events: none;
+    animation: loginFlyby 7s linear infinite;
+  }
+  .login-ship::before {
+    content: "";
+    position: absolute;
+    inset: 3px 0 3px 28px;
+    background: #6fb6dc;
+    clip-path: polygon(0 50%, 82% 0, 100% 50%, 82% 100%);
+    filter: drop-shadow(0 0 8px rgba(111,182,220,.5));
+  }
+  .login-ship::after {
+    content: "";
+    position: absolute;
+    top: 7px;
+    left: 0;
+    width: 42px;
+    height: 3px;
+    border-radius: 99px;
+    background: rgba(111,182,220,.72);
+    box-shadow: -26px 0 0 rgba(111,182,220,.34), -52px 0 0 rgba(111,182,220,.16);
+  }
+  .login-speed span {
+    position: fixed;
+    height: 1px;
+    width: 13vw;
+    background: #6fb6dc;
+    opacity: .22;
+    animation: loginSpeed var(--speed) linear infinite;
+    animation-delay: var(--delay);
+    pointer-events: none;
+  }
+  .login-pupil {
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #123a5a;
+    z-index: 2;
+    transition: transform .08s ease-out;
+  }
+  .login-pupil.left { left: 62%; top: 25%; }
+  .login-pupil.right { left: 76%; top: 24%; }
+  .login-input-wrap:focus-within {
+    border-color: rgba(111,182,220,.85) !important;
+    box-shadow: 0 0 0 3px rgba(111,182,220,.18);
+  }
+  .login-input::placeholder { color: rgba(232,245,251,.34); }
+  @media (max-width: 860px) {
+    .login-seal-panel { display: none !important; }
+    .login-layout { padding: 18px !important; }
+  }
+`
 
 export default function RegisterPage() {
   const navigate = useNavigate()
   const register = useAuthStore((s) => s.register)
+  const passwordRef = useRef<HTMLInputElement>(null)
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [showConfirmPw, setShowConfirmPw] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [passwordFocused, setPasswordFocused] = useState(false)
+  const [mouse, setMouse] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
   const [errors, setErrors] = useState<{ username?: string; password?: string; confirmPw?: string }>({})
   const [formError, setFormError] = useState('')
   const [formSuccess, setFormSuccess] = useState(false)
-  const [shakeField, setShakeField] = useState<string | null>(null)
+  const [shakeField, setShakeField] = useState<Field | 'form' | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const passwordRef = useRef<HTMLInputElement>(null)
+  const stars = useMemo(() => Array.from({ length: 80 }, (_, i) => ({
+    id: i,
+    size: Math.random() * 2.4 + 0.6,
+    top: Math.random() * 100,
+    left: Math.random() * 100,
+    dur: Math.random() * 3 + 2,
+    delay: Math.random() * 5,
+  })), [])
 
-  /* ── Validation ── */
-  type RegisterField = 'username' | 'password' | 'confirmPw'
+  const speedLines = useMemo(() => Array.from({ length: 8 }, (_, i) => ({
+    id: i,
+    top: 16 + i * 8,
+    speed: 0.55 + (i % 4) * 0.12,
+    delay: -i * 0.55,
+  })), [])
 
-  function clearField(field: RegisterField) {
-    setErrors((prev) => ({ ...prev, [field]: undefined }))
-  }
-
-  function setFieldError(field: RegisterField, msg: string) {
-    setErrors((prev) => ({ ...prev, [field]: msg }))
+  const showFieldError = (field: Field, message: string) => {
+    setErrors((prev) => ({ ...prev, [field]: message }))
     setShakeField(field)
     setTimeout(() => setShakeField(null), 400)
   }
 
-  function validate(): boolean {
+  const clearFieldError = (field: Field) => {
+    setErrors((prev) => ({ ...prev, [field]: undefined }))
+  }
+
+  const validate = (): boolean => {
     let valid = true
     if (!username.trim()) {
-      setFieldError('username', '请输入学号')
+      showFieldError('username', '请输入学号')
       valid = false
     } else if (username.trim().length < 4) {
-      setFieldError('username', '学号至少 4 位')
+      showFieldError('username', '学号至少 4 位')
       valid = false
     }
     if (!password) {
-      setFieldError('password', '请输入密码')
+      showFieldError('password', '请输入密码')
       valid = false
     } else if (password.length < 6) {
-      setFieldError('password', '密码至少 6 位')
+      showFieldError('password', '密码至少 6 位')
       valid = false
     }
     if (!confirmPw) {
-      setFieldError('confirmPw', '请再次输入密码')
+      showFieldError('confirmPw', '请再次输入密码')
       valid = false
     } else if (confirmPw !== password) {
-      setFieldError('confirmPw', '两次密码不一致')
+      showFieldError('confirmPw', '两次密码不一致')
       valid = false
     }
     return valid
   }
 
-  const handleBlur = (field: string) => () => {
+  const handleBlur = (field: Field) => () => {
     if (field === 'username') {
       const v = username.trim()
-      if (!v) setFieldError('username', '请输入学号')
-      else if (v.length < 4) setFieldError('username', '学号至少 4 位')
+      if (!v) showFieldError('username', '请输入学号')
+      else if (v.length < 4) showFieldError('username', '学号至少 4 位')
     } else if (field === 'password') {
-      const v = password
-      if (!v) setFieldError('password', '请输入密码')
-      else if (v.length < 6) setFieldError('password', '密码至少 6 位')
+      if (!password) showFieldError('password', '请输入密码')
+      else if (password.length < 6) showFieldError('password', '密码至少 6 位')
     } else if (field === 'confirmPw') {
-      const v = confirmPw
-      if (!v) setFieldError('confirmPw', '请再次输入密码')
-      else if (v !== password) setFieldError('confirmPw', '两次密码不一致')
+      if (!confirmPw) showFieldError('confirmPw', '请再次输入密码')
+      else if (confirmPw !== password) showFieldError('confirmPw', '两次密码不一致')
     }
   }
 
-  const handleChange = (field: string, value: string) => {
-    if (field === 'username') { setUsername(value); if (value.trim().length >= 4) clearField('username') }
-    if (field === 'password') { setPassword(value); if (value.length >= 6) clearField('password') }
-    if (field === 'confirmPw') { setConfirmPw(value); if (value === password) clearField('confirmPw') }
+  const handleChange = (field: Field, value: string) => {
+    if (field === 'username') { setUsername(value); if (value.trim().length >= 4) clearFieldError('username') }
+    if (field === 'password') { setPassword(value); if (value.length >= 6) clearFieldError('password') }
+    if (field === 'confirmPw') { setConfirmPw(value); if (value === password) clearFieldError('confirmPw') }
   }
 
-  /* ── Submit ── */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError('')
@@ -410,119 +378,123 @@ export default function RegisterPage() {
     }
   }
 
-  /* ── Dynamic input style ── */
-  const getInputStyle = (field: RegisterField): CSSProperties => ({
-    ...styles.inputWrapper,
-    borderColor: errors[field] ? '#fca5a5' : '#e2e8f0',
-    boxShadow: errors[field] ? '0 0 0 3px rgba(239,68,68,0.1)' : undefined,
-    background: errors[field] ? '#fef2f2' : '#fff',
-  })
+  const getSealTransform = () => {
+    const normX = Math.max(-1, Math.min(1, (mouse.x - window.innerWidth * 0.34) / 360))
+    const normY = Math.max(-1, Math.min(1, (mouse.y - window.innerHeight * 0.5) / 320))
+    const peek = passwordFocused ? 1 : 0
+    return `perspective(800px) rotateY(${normX * 8 - peek * 6}deg) rotateX(${-normY * 4}deg) translate(${normX * 10 + peek * 34}px, ${normY * 5}px) scale(${1 + peek * 0.08})`
+  }
 
-  /* ── CSS injection ── */
-  const css = `
-    body { margin: 0; overflow: hidden; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes shake {
-      0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)}
-      40%{transform:translateX(4px)} 60%{transform:translateX(-3px)}
-      80%{transform:translateX(3px)}
-    }
-    @keyframes fadeSlideUp {
-      from { opacity: 0; transform: translateY(8px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .form-field { animation: fadeSlideUp 0.4s ease-out both; }
-    .form-field:nth-child(1) { animation-delay: 0.03s; }
-    .form-field:nth-child(2) { animation-delay: 0.08s; }
-    .form-field:nth-child(3) { animation-delay: 0.13s; }
-    .form-field:nth-child(4) { animation-delay: 0.18s; }
-    .form-field:nth-child(5) { animation-delay: 0.23s; }
-    .shake { animation: shake 0.4s ease-out; }
-    .spinner {
-      width: 20px; height: 20px;
-      border: 2px solid rgba(255,255,255,0.3);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.6s linear infinite;
-    }
-    .brand-panel { display: none; }
-    @media (min-width: 1024px) {
-      .brand-panel { display: flex; width: 50%; }
-      .mobile-brand { display: none; }
-      .desktop-welcome { display: block; }
-    }
-    @media (min-width: 1280px) {
-      .brand-panel { width: 60%; }
-    }
-    @media (max-width: 1023px) {
-      .desktop-welcome { display: none; }
-    }
-  `
+  const getPupilTransform = () => {
+    const offsetX = Math.max(-6, Math.min(6, (mouse.x - window.innerWidth * 0.34) / 75))
+    const offsetY = Math.max(-6, Math.min(6, (mouse.y - window.innerHeight * 0.46) / 75))
+    return `translate(${offsetX}px, ${offsetY}px) scale(${passwordFocused ? 1.28 : 1})`
+  }
+
+  const inputWrapperStyle = (field: Field): CSSProperties => ({
+    ...styles.inputWrap,
+    borderColor: errors[field] ? 'rgba(248,113,113,.82)' : 'rgba(207,231,244,0.28)',
+    background: errors[field] ? 'rgba(248,113,113,.08)' : 'rgba(255,255,255,0.055)',
+  })
 
   return (
     <>
       <style>{css}</style>
-      <div style={styles.container}>
-
-        {/* ═══ Left: Brand Panel ═══ */}
-        <div
-          className="brand-panel"
-          style={{
-            ...styles.brandPanel,
-            background: "url('/dljmfm.png') center/cover no-repeat",
-          }}
-        >
-          <div style={styles.brandOverlay} />
-          <div style={styles.brandContent}>
-            <img src="/seal-logo-transparent.png" alt="EduRAG" style={styles.logo} />
-            <div style={styles.brandName}>EduRAG</div>
-            <div style={styles.slogan}>
-              知识不在于拥有答案，<br />而在于提出正确的问题。
-            </div>
-            <div style={styles.brandDesc}>校园课程资料智能搜索与问答服务</div>
+      <main style={styles.page} onMouseMove={(e) => setMouse({ x: e.clientX, y: e.clientY })}>
+        <div aria-hidden="true">
+          {stars.map((star) => (
+            <span
+              key={star.id}
+              className="login-star"
+              style={{
+                width: star.size,
+                height: star.size,
+                top: `${star.top}%`,
+                left: `${star.left}%`,
+                '--dur': `${star.dur}s`,
+                '--delay': `${star.delay}s`,
+              } as CSSProperties}
+            />
+          ))}
+          <div className="login-ship" />
+          <div className="login-speed">
+            {speedLines.map((line) => (
+              <span
+                key={line.id}
+                style={{
+                  top: `${line.top}%`,
+                  '--speed': `${line.speed}s`,
+                  '--delay': `${line.delay}s`,
+                } as CSSProperties}
+              />
+            ))}
           </div>
         </div>
 
-        {/* ═══ Right: Register Form ═══ */}
-        <div style={styles.formPanel}>
-          <div style={styles.formCard}>
+        <div className="login-layout" style={styles.layout}>
+          <section className="login-seal-panel" style={styles.sealPanel} aria-hidden="true">
+            <div style={{ ...styles.sealWrapper, transform: getSealTransform() }}>
+              <img src="/seal-no-eyes.png" alt="" draggable={false} style={styles.sealImg} />
+              <span className="login-pupil left" style={{ transform: getPupilTransform() }} />
+              <span className="login-pupil right" style={{ transform: getPupilTransform() }} />
+            </div>
+          </section>
 
-            {/* Mobile Brand */}
-            <div className="mobile-brand" style={styles.mobileLogo}>
-              <img src="/seal-logo-transparent.png" alt="EduRAG" style={styles.mobileLogoImg} />
-              <div style={styles.mobileLogoText}>EduRAG</div>
-              <div style={styles.mobileLogoDesc}>校园课程资料智能搜索与问答服务系统</div>
+          <section style={styles.card}>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+                <img src="/seal-logo-transparent.png" alt="EduRAG" style={styles.logo} />
+                <span style={{ color: '#fff', fontSize: 22, fontWeight: 800, letterSpacing: '0.03em' }}>EduRAG</span>
+              </div>
+              <h1 style={{ color: '#fff', fontSize: 26, lineHeight: 1.2, margin: '0 0 8px', fontWeight: 800 }}>创建账号</h1>
+              <p style={{ color: 'rgba(232,245,251,.62)', fontSize: 14, margin: 0 }}>使用学号和密码注册账号</p>
             </div>
 
-            {/* Title (desktop) */}
-            <div className="desktop-welcome">
-              <h1 style={styles.welcomeTitle}>创建账号</h1>
-              <p style={styles.welcomeSub}>使用学号和密码注册账号</p>
-            </div>
-
-            {/* ═══ Form ═══ */}
             <form onSubmit={handleSubmit} noValidate>
-
-              {/* Global Error */}
               {formError && (
-                <div className={`form-field${shakeField === 'form' ? ' shake' : ''}`} style={styles.formError}>
-                  <ErrorIcon /><span>{formError}</span>
+                <div className={`login-field${shakeField === 'form' ? ' login-shake' : ''}`} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '12px 14px',
+                  borderRadius: 8,
+                  color: '#fecaca',
+                  background: 'rgba(239,68,68,.12)',
+                  border: '1px solid rgba(239,68,68,.28)',
+                  fontSize: 13,
+                  marginBottom: 16,
+                }}>
+                  <ErrorIcon />
+                  <span>{formError}</span>
                 </div>
               )}
 
-              {/* Global Success */}
               {formSuccess && (
-                <div className="form-field" style={styles.formSuccess}>
-                  <SuccessIcon /><span>注册成功！即将跳转到登录页...</span>
+                <div className="login-field" style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '12px 14px',
+                  borderRadius: 8,
+                  color: '#a7f3d0',
+                  background: 'rgba(16,185,129,.12)',
+                  border: '1px solid rgba(16,185,129,.32)',
+                  fontSize: 13,
+                  marginBottom: 16,
+                }}>
+                  <SuccessIcon />
+                  <span>注册成功！即将跳转到登录页...</span>
                 </div>
               )}
 
-              {/* Username */}
-              <div className="form-field" style={styles.field}>
-                <label style={styles.label}>学号 / 工号 <span style={styles.required}>*</span></label>
-                <div className={shakeField === 'username' ? 'shake' : ''} style={getInputStyle('username')}>
+              <div className="login-field" style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', color: 'rgba(232,245,251,.76)', fontSize: 13, fontWeight: 600, marginBottom: 7 }}>
+                  学号 / 工号 <span style={{ color: '#fca5a5' }}>*</span>
+                </label>
+                <div className={`login-input-wrap${shakeField === 'username' ? ' login-shake' : ''}`} style={inputWrapperStyle('username')}>
                   <span style={styles.inputIcon}><UserIcon /></span>
                   <input
+                    className="login-input"
                     style={styles.input}
                     type="text"
                     autoComplete="username"
@@ -532,107 +504,87 @@ export default function RegisterPage() {
                     onBlur={handleBlur('username')}
                   />
                 </div>
-                {errors.username && <p style={styles.fieldError}>{errors.username}</p>}
+                {errors.username && <p style={{ margin: '5px 0 0 4px', color: '#fca5a5', fontSize: 12 }}>{errors.username}</p>}
               </div>
 
-              {/* Password */}
-              <div className="form-field" style={styles.field}>
-                <label style={styles.label}>密码 <span style={styles.required}>*</span></label>
-                <div className={shakeField === 'password' ? 'shake' : ''} style={getInputStyle('password')}>
+              <div className="login-field" style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', color: 'rgba(232,245,251,.76)', fontSize: 13, fontWeight: 600, marginBottom: 7 }}>
+                  密码 <span style={{ color: '#fca5a5' }}>*</span>
+                </label>
+                <div className={`login-input-wrap${shakeField === 'password' ? ' login-shake' : ''}`} style={inputWrapperStyle('password')}>
                   <span style={styles.inputIcon}><LockIcon /></span>
                   <input
                     ref={passwordRef}
+                    className="login-input"
                     style={styles.input}
                     type={showPw ? 'text' : 'password'}
                     autoComplete="new-password"
                     placeholder="至少 6 位，包含字母和数字"
                     value={password}
+                    onFocus={() => setPasswordFocused(true)}
+                    onBlur={() => {
+                      setPasswordFocused(false)
+                      handleBlur('password')()
+                    }}
                     onChange={(e) => handleChange('password', e.target.value)}
-                    onBlur={handleBlur('password')}
                   />
-                  <button
-                    type="button"
-                    style={styles.toggleBtn}
-                    onClick={() => setShowPw(!showPw)}
-                    aria-label={showPw ? '隐藏密码' : '显示密码'}
-                  >
-                    {showPw ? <EyeOnIcon /> : <EyeOffIcon />}
+                  <button type="button" style={styles.toggle} onClick={() => setShowPw(!showPw)} aria-label={showPw ? '隐藏密码' : '显示密码'}>
+                    <EyeIcon open={showPw} />
                   </button>
                 </div>
-                {errors.password && <p style={styles.fieldError}>{errors.password}</p>}
+                {errors.password && <p style={{ margin: '5px 0 0 4px', color: '#fca5a5', fontSize: 12 }}>{errors.password}</p>}
               </div>
 
-              {/* Confirm Password */}
-              <div className="form-field" style={styles.field}>
-                <label style={styles.label}>确认密码 <span style={styles.required}>*</span></label>
-                <div className={shakeField === 'confirmPw' ? 'shake' : ''} style={getInputStyle('confirmPw')}>
+              <div className="login-field" style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', color: 'rgba(232,245,251,.76)', fontSize: 13, fontWeight: 600, marginBottom: 7 }}>
+                  确认密码 <span style={{ color: '#fca5a5' }}>*</span>
+                </label>
+                <div className={`login-input-wrap${shakeField === 'confirmPw' ? ' login-shake' : ''}`} style={inputWrapperStyle('confirmPw')}>
                   <span style={styles.inputIcon}><LockIcon /></span>
                   <input
+                    className="login-input"
                     style={styles.input}
                     type={showConfirmPw ? 'text' : 'password'}
                     autoComplete="new-password"
                     placeholder="请再次输入密码"
                     value={confirmPw}
+                    onFocus={() => setPasswordFocused(true)}
+                    onBlur={() => {
+                      setPasswordFocused(false)
+                      handleBlur('confirmPw')()
+                    }}
                     onChange={(e) => handleChange('confirmPw', e.target.value)}
-                    onBlur={handleBlur('confirmPw')}
                   />
-                  <button
-                    type="button"
-                    style={styles.toggleBtn}
-                    onClick={() => setShowConfirmPw(!showConfirmPw)}
-                    aria-label={showConfirmPw ? '隐藏密码' : '显示密码'}
-                  >
-                    {showConfirmPw ? <EyeOnIcon /> : <EyeOffIcon />}
+                  <button type="button" style={styles.toggle} onClick={() => setShowConfirmPw(!showConfirmPw)} aria-label={showConfirmPw ? '隐藏密码' : '显示密码'}>
+                    <EyeIcon open={showConfirmPw} />
                   </button>
                 </div>
-                {errors.confirmPw && <p style={styles.fieldError}>{errors.confirmPw}</p>}
+                {errors.confirmPw && <p style={{ margin: '5px 0 0 4px', color: '#fca5a5', fontSize: 12 }}>{errors.confirmPw}</p>}
               </div>
 
-              {/* Submit */}
-              <div className="form-field" style={{ ...styles.field, paddingTop: 8 }}>
+              <div className="login-field">
                 <button
                   type="submit"
                   disabled={loading || formSuccess}
                   style={{
-                    ...styles.submitBtn,
-                    ...(formSuccess ? { background: '#10b981' } : {}),
-                    opacity: loading ? 0.7 : 1,
+                    ...styles.submit,
+                    opacity: loading ? 0.72 : 1,
                     cursor: loading ? 'not-allowed' : 'pointer',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!loading && !formSuccess) {
-                      e.currentTarget.style.background = '#4F46E5'
-                      e.currentTarget.style.boxShadow = '0 4px 14px rgba(99,102,241,0.35)'
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!loading && !formSuccess) {
-                      e.currentTarget.style.background = '#6366F1'
-                      e.currentTarget.style.boxShadow = 'none'
-                    }
+                    background: formSuccess ? '#10b981' : styles.submit.background,
                   }}
                 >
-                  {loading ? (
-                    <><span className="spinner" /><span>注册中...</span></>
-                  ) : formSuccess ? (
-                    '注册成功 ✓'
-                  ) : (
-                    '注 册'
-                  )}
+                  {loading ? <><span className="login-spinner" />注册中...</> : formSuccess ? '注册成功' : '注 册'}
                 </button>
               </div>
             </form>
 
-            {/* Login link */}
-            <div className="form-field" style={{ ...styles.loginLink, animationDelay: '0.38s' }}>
+            <p className="login-field" style={{ margin: '24px 0 0', textAlign: 'center', color: 'rgba(232,245,251,.46)', fontSize: 14 }}>
               已有账号？
-              <Link to="/login" style={{ color: '#4F46E5', fontWeight: 500, textDecoration: 'none' }}>
-                立即登录
-              </Link>
-            </div>
-          </div>
+              <Link to="/login" style={{ color: '#a8d6ee', fontWeight: 700, textDecoration: 'none', marginLeft: 4 }}>立即登录</Link>
+            </p>
+          </section>
         </div>
-      </div>
+      </main>
     </>
   )
 }

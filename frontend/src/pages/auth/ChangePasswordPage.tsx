@@ -1,10 +1,6 @@
-import { useState, type CSSProperties } from 'react'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Inline SVG Icons
-   ═══════════════════════════════════════════════════════════════════════ */
 
 function LockIcon() {
   return (
@@ -15,19 +11,15 @@ function LockIcon() {
   )
 }
 
-function EyeOffIcon() {
-  return (
+function EyeIcon({ open }: { open: boolean }) {
+  return open ? (
     <svg width={20} height={20} viewBox="0 0 20 20" fill="none">
-      <path d="M2.5 2.5L17.5 17.5" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
       <path d="M10 5C5.6 5 2 7.3.4 10c-.3.5-.3 1.1 0 1.5C2 14.2 5.6 16.5 10 16.5s8-2.3 9.6-5c.3-.5.3-1.1 0-1.5C18 7.3 14.4 5 10 5z" stroke="currentColor" strokeWidth={1.5} />
       <circle cx={10} cy={10.8} r={2.5} stroke="currentColor" strokeWidth={1.5} />
     </svg>
-  )
-}
-
-function EyeOnIcon() {
-  return (
+  ) : (
     <svg width={20} height={20} viewBox="0 0 20 20" fill="none">
+      <path d="M2.5 2.5L17.5 17.5" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
       <path d="M10 5C5.6 5 2 7.3.4 10c-.3.5-.3 1.1 0 1.5C2 14.2 5.6 16.5 10 16.5s8-2.3 9.6-5c.3-.5.3-1.1 0-1.5C18 7.3 14.4 5 10 5z" stroke="currentColor" strokeWidth={1.5} />
       <circle cx={10} cy={10.8} r={2.5} stroke="currentColor" strokeWidth={1.5} />
     </svg>
@@ -52,118 +44,226 @@ function SuccessIcon() {
   )
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Styles
-   ═══════════════════════════════════════════════════════════════════════ */
+type Field = 'oldPw' | 'newPw' | 'confirmPw'
 
-const styles = {
-  container: {
-    display: 'flex',
-    height: '100vh',
+const styles: Record<string, CSSProperties> = {
+  page: {
+    minHeight: '100vh',
     overflow: 'hidden',
-    fontFamily: "'Inter', system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif",
-  } as CSSProperties,
-
-  brandPanel: { position: 'relative', overflow: 'hidden' } as CSSProperties,
-  brandOverlay: {
-    position: 'absolute', inset: 0,
-    background: 'linear-gradient(to bottom right, rgba(49,46,129,0.6), rgba(49,46,129,0.25), rgba(55,48,163,0.5))',
-  } as CSSProperties,
-  brandContent: {
-    position: 'relative', zIndex: 10,
-    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    width: '100%', height: '100%', textAlign: 'center', color: '#fff', padding: '48px',
-  } as CSSProperties,
-  logo: { width: 56, height: 48, filter: 'drop-shadow(0 0 12px rgba(134,59,255,0.5))' } as CSSProperties,
-  brandName: { fontSize: 30, fontWeight: 800, letterSpacing: '0.05em', textShadow: '0 0 40px rgba(134,59,255,0.5)', marginTop: 12 } as CSSProperties,
-  slogan: { fontSize: 28, fontWeight: 600, lineHeight: 1.5, maxWidth: 320, marginTop: 40 } as CSSProperties,
-  brandDesc: { fontSize: 13, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em', maxWidth: 320, marginTop: 16 } as CSSProperties,
-
-  formPanel: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', background: '#f8fafc' } as CSSProperties,
-  formCard: { width: '100%', maxWidth: 420 } as CSSProperties,
-
-  mobileLogo: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginBottom: 20, textAlign: 'center' } as CSSProperties,
-  mobileLogoImg: { width: 40, height: 34 } as CSSProperties,
-  mobileLogoText: { fontSize: 20, fontWeight: 800, color: '#0f172a' } as CSSProperties,
-  mobileLogoDesc: { fontSize: 13, color: '#64748b', marginTop: 2 } as CSSProperties,
-
-  welcomeTitle: { fontSize: 36, fontWeight: 700, color: '#0f172a', marginBottom: 8 } as CSSProperties,
-  welcomeSub: { fontSize: 15, color: '#64748b', marginBottom: 28 } as CSSProperties,
-
-  field: { marginBottom: 16 } as CSSProperties,
-  label: { display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 } as CSSProperties,
-  required: { color: '#ef4444' } as CSSProperties,
-
-  inputWrapper: { position: 'relative', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', transition: 'all 0.2s' } as CSSProperties,
-  inputIcon: { position: 'absolute', top: 0, bottom: 0, left: 0, display: 'flex', alignItems: 'center', paddingLeft: 14, color: '#94a3b8', pointerEvents: 'none' } as CSSProperties,
-  input: { width: '100%', padding: '12px 48px 12px 42px', background: 'transparent', border: 'none', outline: 'none', fontSize: 14, color: '#0f172a', borderRadius: 8, boxSizing: 'border-box' } as CSSProperties,
-  toggleBtn: { position: 'absolute', top: 0, bottom: 0, right: 0, display: 'flex', alignItems: 'center', paddingRight: 14, color: '#94a3b8', cursor: 'pointer', background: 'none', border: 'none' } as CSSProperties,
-  fieldError: { fontSize: 12, color: '#dc2626', marginTop: 4, marginLeft: 4 } as CSSProperties,
-
-  submitBtn: {
-    width: '100%', padding: '12px 16px', background: '#6366F1', color: '#fff',
-    fontWeight: 600, fontSize: 14, border: 'none', borderRadius: 8, cursor: 'pointer',
-    marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-    transition: 'all 0.2s', position: 'relative', overflow: 'hidden',
-  } as CSSProperties,
-
-  formError: { display: 'flex', alignItems: 'center', gap: 8, padding: 12, borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 13, marginBottom: 16 } as CSSProperties,
-  formSuccess: { display: 'flex', alignItems: 'center', gap: 8, padding: 12, borderRadius: 8, background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', fontSize: 13, marginBottom: 16 } as CSSProperties,
-  backLink: { textAlign: 'center', marginTop: 24, fontSize: 14, color: '#64748b' } as CSSProperties,
+    position: 'relative',
+    background: 'radial-gradient(ellipse at 50% 30%, #0f2847 0%, #091625 42%, #040b14 100%)',
+    color: '#e8f5fb',
+  },
+  layout: {
+    position: 'relative',
+    zIndex: 15,
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 48,
+    padding: '32px',
+  },
+  sealPanel: {
+    width: 420,
+    height: 500,
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    perspective: 800,
+  },
+  sealWrapper: {
+    position: 'relative',
+    width: 300,
+    height: 300,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'transform 0.18s ease-out',
+    filter: 'drop-shadow(0 0 32px rgba(111,182,220,0.18))',
+  },
+  sealImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+    transform: 'scaleX(-1)',
+    userSelect: 'none',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 420,
+    padding: '42px 34px 34px',
+    borderRadius: 8,
+    background: 'rgba(255,255,255,0.075)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    boxShadow: '0 24px 70px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08)',
+    backdropFilter: 'blur(24px)',
+  },
+  logo: {
+    width: 62,
+    height: 62,
+    objectFit: 'cover',
+    borderRadius: 16,
+    boxShadow: '0 18px 36px rgba(47,128,183,0.28)',
+    border: '1px solid rgba(255,255,255,0.16)',
+  },
+  inputWrap: {
+    position: 'relative',
+    borderRadius: 8,
+    border: '1px solid rgba(207,231,244,0.28)',
+    background: 'rgba(255,255,255,0.055)',
+    transition: 'all 0.2s',
+  },
+  inputIcon: {
+    position: 'absolute',
+    left: 14,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: 'rgba(168,214,238,0.58)',
+    display: 'flex',
+  },
+  input: {
+    width: '100%',
+    padding: '13px 46px 13px 44px',
+    border: 'none',
+    outline: 'none',
+    background: 'transparent',
+    color: '#f8fcff',
+    fontSize: 14,
+    boxSizing: 'border-box',
+  },
+  toggle: {
+    position: 'absolute',
+    right: 10,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    border: 'none',
+    background: 'transparent',
+    color: 'rgba(168,214,238,0.58)',
+    cursor: 'pointer',
+    padding: 4,
+    display: 'flex',
+  },
+  submit: {
+    width: '100%',
+    padding: '13px 18px',
+    border: 'none',
+    borderRadius: 8,
+    color: '#fff',
+    background: 'linear-gradient(135deg, #2f80b7, #56a9d3)',
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: '0 14px 26px rgba(47,128,183,0.28)',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   CSS injection
-   ═══════════════════════════════════════════════════════════════════════ */
-
-const injectedCSS = `
-  body { margin: 0; overflow: hidden; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes shake {
-    0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)}
-    40%{transform:translateX(4px)} 60%{transform:translateX(-3px)}
-    80%{transform:translateX(3px)}
-  }
-  @keyframes fadeSlideUp {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  .form-field { animation: fadeSlideUp 0.4s ease-out both; }
-  .form-field:nth-child(1) { animation-delay: 0.03s; }
-  .form-field:nth-child(2) { animation-delay: 0.08s; }
-  .form-field:nth-child(3) { animation-delay: 0.13s; }
-  .form-field:nth-child(4) { animation-delay: 0.18s; }
-  .form-field:nth-child(5) { animation-delay: 0.23s; }
-  .shake { animation: shake 0.4s ease-out; }
-  .spinner {
-    width: 20px; height: 20px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: #fff;
+const css = `
+  body { overflow: hidden; }
+  .login-star {
+    position: absolute;
     border-radius: 50%;
-    animation: spin 0.6s linear infinite;
+    background: #fff;
+    animation: loginTwinkle var(--dur) ease-in-out infinite;
+    animation-delay: var(--delay);
   }
-  .brand-panel { display: none; }
-  @media (min-width: 1024px) {
-    .brand-panel { display: flex; width: 50%; }
-    .mobile-brand { display: none; }
-    .desktop-welcome { display: block; }
+  @keyframes loginTwinkle { 0%,100% { opacity: .14; } 50% { opacity: .85; } }
+  @keyframes loginFlyby { from { transform: translateX(-240px); } to { transform: translateX(calc(100vw + 240px)); } }
+  @keyframes loginSpeed { from { left: 120%; opacity: .28; } to { left: -30%; opacity: 0; } }
+  @keyframes loginSpin { to { transform: rotate(360deg); } }
+  @keyframes loginShake {
+    0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)}
+    40%{transform:translateX(4px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)}
   }
-  @media (min-width: 1280px) {
-    .brand-panel { width: 60%; }
+  @keyframes loginFadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .login-field { animation: loginFadeUp .42s ease-out both; }
+  .login-field:nth-child(1) { animation-delay: .04s; }
+  .login-field:nth-child(2) { animation-delay: .1s; }
+  .login-field:nth-child(3) { animation-delay: .16s; }
+  .login-field:nth-child(4) { animation-delay: .22s; }
+  .login-field:nth-child(5) { animation-delay: .28s; }
+  .login-shake { animation: loginShake .4s ease-out; }
+  .login-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,.35);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: loginSpin .7s linear infinite;
   }
-  @media (max-width: 1023px) {
-    .desktop-welcome { display: none; }
+  .login-ship {
+    position: fixed;
+    top: 22%;
+    left: 0;
+    width: 112px;
+    height: 18px;
+    z-index: 5;
+    pointer-events: none;
+    animation: loginFlyby 7s linear infinite;
+  }
+  .login-ship::before {
+    content: "";
+    position: absolute;
+    inset: 3px 0 3px 28px;
+    background: #6fb6dc;
+    clip-path: polygon(0 50%, 82% 0, 100% 50%, 82% 100%);
+    filter: drop-shadow(0 0 8px rgba(111,182,220,.5));
+  }
+  .login-ship::after {
+    content: "";
+    position: absolute;
+    top: 7px;
+    left: 0;
+    width: 42px;
+    height: 3px;
+    border-radius: 99px;
+    background: rgba(111,182,220,.72);
+    box-shadow: -26px 0 0 rgba(111,182,220,.34), -52px 0 0 rgba(111,182,220,.16);
+  }
+  .login-speed span {
+    position: fixed;
+    height: 1px;
+    width: 13vw;
+    background: #6fb6dc;
+    opacity: .22;
+    animation: loginSpeed var(--speed) linear infinite;
+    animation-delay: var(--delay);
+    pointer-events: none;
+  }
+  .login-pupil {
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #123a5a;
+    z-index: 2;
+    transition: transform .08s ease-out;
+  }
+  .login-pupil.left { left: 62%; top: 25%; }
+  .login-pupil.right { left: 76%; top: 24%; }
+  .login-input-wrap:focus-within {
+    border-color: rgba(111,182,220,.85) !important;
+    box-shadow: 0 0 0 3px rgba(111,182,220,.18);
+  }
+  .login-input::placeholder { color: rgba(232,245,251,.34); }
+  @media (max-width: 860px) {
+    .login-seal-panel { display: none !important; }
+    .login-layout { padding: 18px !important; }
   }
 `
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Component
-   ═══════════════════════════════════════════════════════════════════════ */
 
 export default function ChangePasswordPage() {
   const navigate = useNavigate()
   const { user, resetPassword, changePassword } = useAuthStore()
   const isForce = user?.force_password_change ?? false
+
+  const newPwRef = useRef<HTMLInputElement>(null)
 
   const [oldPw, setOldPw] = useState('')
   const [newPw, setNewPw] = useState('')
@@ -171,20 +271,38 @@ export default function ChangePasswordPage() {
   const [showOld, setShowOld] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [passwordFocused, setPasswordFocused] = useState(false)
+  const [mouse, setMouse] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
   const [loading, setLoading] = useState(false)
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [errors, setErrors] = useState<Partial<Record<Field, string>>>({})
   const [formError, setFormError] = useState('')
   const [formSuccess, setFormSuccess] = useState(false)
-  const [shakeField, setShakeField] = useState<string | null>(null)
+  const [shakeField, setShakeField] = useState<Field | 'form' | null>(null)
 
-  /* ── Helpers ── */
-  function clearField(f: string) { setErrors((p) => ({ ...p, [f]: undefined! })) }
-  function setFieldErr(f: string, msg: string) {
+  const stars = useMemo(() => Array.from({ length: 80 }, (_, i) => ({
+    id: i,
+    size: Math.random() * 2.4 + 0.6,
+    top: Math.random() * 100,
+    left: Math.random() * 100,
+    dur: Math.random() * 3 + 2,
+    delay: Math.random() * 5,
+  })), [])
+
+  const speedLines = useMemo(() => Array.from({ length: 8 }, (_, i) => ({
+    id: i,
+    top: 16 + i * 8,
+    speed: 0.55 + (i % 4) * 0.12,
+    delay: -i * 0.55,
+  })), [])
+
+  const clearField = (f: Field) => setErrors((p) => ({ ...p, [f]: undefined }))
+  const setFieldErr = (f: Field, msg: string) => {
     setErrors((p) => ({ ...p, [f]: msg }))
-    setShakeField(f); setTimeout(() => setShakeField(null), 400)
+    setShakeField(f)
+    setTimeout(() => setShakeField(null), 400)
   }
 
-  function validate(): boolean {
+  const validate = (): boolean => {
     let ok = true
     if (!isForce && !oldPw) { setFieldErr('oldPw', '请输入当前密码'); ok = false }
     if (!newPw) { setFieldErr('newPw', '请输入新密码'); ok = false }
@@ -195,7 +313,7 @@ export default function ChangePasswordPage() {
     return ok
   }
 
-  const handleBlur = (f: string) => () => {
+  const handleBlur = (f: Field) => () => {
     if (f === 'oldPw' && !oldPw) setFieldErr('oldPw', '请输入当前密码')
     if (f === 'newPw') {
       if (!newPw) setFieldErr('newPw', '请输入新密码')
@@ -208,15 +326,16 @@ export default function ChangePasswordPage() {
     }
   }
 
-  const handleChange = (f: string, v: string) => {
+  const handleChange = (f: Field, v: string) => {
     if (f === 'oldPw') { setOldPw(v); if (v) clearField('oldPw') }
-    if (f === 'newPw') { setNewPw(v); if (v.length >= 6 && (!isForce || v !== oldPw)) clearField('newPw') }
+    if (f === 'newPw') { setNewPw(v); if (v.length >= 6 && (!isForce ? v !== oldPw : true)) clearField('newPw') }
     if (f === 'confirmPw') { setConfirmPw(v); if (v === newPw) clearField('confirmPw') }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setFormError(''); setFormSuccess(false)
+    setFormError('')
+    setFormSuccess(false)
     if (!validate()) return
 
     setLoading(true)
@@ -236,158 +355,229 @@ export default function ChangePasswordPage() {
         setFieldErr('oldPw', '旧密码不正确')
       } else {
         setFormError(msg)
-        setShakeField('form'); setTimeout(() => setShakeField(null), 400)
+        setShakeField('form')
+        setTimeout(() => setShakeField(null), 400)
       }
     }
   }
 
-  const getInputStyle = (f: string): CSSProperties => ({
-    ...styles.inputWrapper,
-    borderColor: errors[f] ? '#fca5a5' : '#e2e8f0',
-    boxShadow: errors[f] ? '0 0 0 3px rgba(239,68,68,0.1)' : undefined,
-    background: errors[f] ? '#fef2f2' : '#fff',
+  const getSealTransform = () => {
+    const normX = Math.max(-1, Math.min(1, (mouse.x - window.innerWidth * 0.34) / 360))
+    const normY = Math.max(-1, Math.min(1, (mouse.y - window.innerHeight * 0.5) / 320))
+    const peek = passwordFocused ? 1 : 0
+    return `perspective(800px) rotateY(${normX * 8 - peek * 6}deg) rotateX(${-normY * 4}deg) translate(${normX * 10 + peek * 34}px, ${normY * 5}px) scale(${1 + peek * 0.08})`
+  }
+
+  const getPupilTransform = () => {
+    const offsetX = Math.max(-6, Math.min(6, (mouse.x - window.innerWidth * 0.34) / 75))
+    const offsetY = Math.max(-6, Math.min(6, (mouse.y - window.innerHeight * 0.46) / 75))
+    return `translate(${offsetX}px, ${offsetY}px) scale(${passwordFocused ? 1.28 : 1})`
+  }
+
+  const inputWrapperStyle = (field: Field): CSSProperties => ({
+    ...styles.inputWrap,
+    borderColor: errors[field] ? 'rgba(248,113,113,.82)' : 'rgba(207,231,244,0.28)',
+    background: errors[field] ? 'rgba(248,113,113,.08)' : 'rgba(255,255,255,0.055)',
   })
 
-  const descText = isForce ? '首次登录，请设置你的新密码' : '修改你的登录密码'
+  const title = isForce ? '设置密码' : '修改密码'
+  const subtitle = isForce ? '首次登录，请设置你的新密码' : '修改你的登录密码'
   const successText = isForce ? '密码设置成功！请重新登录...' : '密码修改成功！即将跳转...'
+  const submitText = isForce ? '设置密码' : '确认修改'
+  const loadingText = isForce ? '设置中...' : '修改中...'
 
   return (
     <>
-      <style>{injectedCSS}</style>
-      <div style={styles.container}>
-
-        {/* Left Brand Panel */}
-        <div className="brand-panel" style={{ ...styles.brandPanel, background: "url('/dljmfm.png') center/cover no-repeat" }}>
-          <div style={styles.brandOverlay} />
-          <div style={styles.brandContent}>
-            <img src="/seal-logo-transparent.png" alt="EduRAG" style={styles.logo} />
-            <div style={styles.brandName}>EduRAG</div>
-            <div style={styles.slogan}>保护你的账户安全，<br />从这里开始。</div>
-            <div style={styles.brandDesc}>{descText}</div>
+      <style>{css}</style>
+      <main style={styles.page} onMouseMove={(e) => setMouse({ x: e.clientX, y: e.clientY })}>
+        <div aria-hidden="true">
+          {stars.map((star) => (
+            <span
+              key={star.id}
+              className="login-star"
+              style={{
+                width: star.size,
+                height: star.size,
+                top: `${star.top}%`,
+                left: `${star.left}%`,
+                '--dur': `${star.dur}s`,
+                '--delay': `${star.delay}s`,
+              } as CSSProperties}
+            />
+          ))}
+          <div className="login-ship" />
+          <div className="login-speed">
+            {speedLines.map((line) => (
+              <span
+                key={line.id}
+                style={{
+                  top: `${line.top}%`,
+                  '--speed': `${line.speed}s`,
+                  '--delay': `${line.delay}s`,
+                } as CSSProperties}
+              />
+            ))}
           </div>
         </div>
 
-        {/* Right Form Panel */}
-        <div style={styles.formPanel}>
-          <div style={styles.formCard}>
-
-            {/* Mobile Brand */}
-            <div className="mobile-brand" style={styles.mobileLogo}>
-              <img src="/seal-logo-transparent.png" alt="EduRAG" style={styles.mobileLogoImg} />
-              <div style={styles.mobileLogoText}>EduRAG</div>
-              <div style={styles.mobileLogoDesc}>{descText}</div>
+        <div className="login-layout" style={styles.layout}>
+          <section className="login-seal-panel" style={styles.sealPanel} aria-hidden="true">
+            <div style={{ ...styles.sealWrapper, transform: getSealTransform() }}>
+              <img src="/seal-no-eyes.png" alt="" draggable={false} style={styles.sealImg} />
+              <span className="login-pupil left" style={{ transform: getPupilTransform() }} />
+              <span className="login-pupil right" style={{ transform: getPupilTransform() }} />
             </div>
+          </section>
 
-            {/* Title */}
-            <div className="desktop-welcome">
-              <h1 style={styles.welcomeTitle}>{isForce ? '设置密码' : '修改密码'}</h1>
-              <p style={styles.welcomeSub}>{descText}</p>
+          <section style={styles.card}>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+                <img src="/seal-logo-transparent.png" alt="EduRAG" style={styles.logo} />
+                <span style={{ color: '#fff', fontSize: 22, fontWeight: 800, letterSpacing: '0.03em' }}>EduRAG</span>
+              </div>
+              <h1 style={{ color: '#fff', fontSize: 26, lineHeight: 1.2, margin: '0 0 8px', fontWeight: 800 }}>{title}</h1>
+              <p style={{ color: 'rgba(232,245,251,.62)', fontSize: 14, margin: 0 }}>{subtitle}</p>
             </div>
 
             <form onSubmit={handleSubmit} noValidate>
-
-              {/* Global Error */}
               {formError && (
-                <div className={`form-field${shakeField === 'form' ? ' shake' : ''}`} style={styles.formError}>
-                  <ErrorIcon /><span>{formError}</span>
+                <div className={`login-field${shakeField === 'form' ? ' login-shake' : ''}`} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '12px 14px',
+                  borderRadius: 8,
+                  color: '#fecaca',
+                  background: 'rgba(239,68,68,.12)',
+                  border: '1px solid rgba(239,68,68,.28)',
+                  fontSize: 13,
+                  marginBottom: 16,
+                }}>
+                  <ErrorIcon />
+                  <span>{formError}</span>
                 </div>
               )}
 
-              {/* Global Success */}
               {formSuccess && (
-                <div className="form-field" style={styles.formSuccess}>
-                  <SuccessIcon /><span>{successText}</span>
+                <div className="login-field" style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '12px 14px',
+                  borderRadius: 8,
+                  color: '#a7f3d0',
+                  background: 'rgba(16,185,129,.12)',
+                  border: '1px solid rgba(16,185,129,.32)',
+                  fontSize: 13,
+                  marginBottom: 16,
+                }}>
+                  <SuccessIcon />
+                  <span>{successText}</span>
                 </div>
               )}
 
-              {/* Old Password (normal mode only) */}
               {!isForce && (
-                <div className="form-field" style={styles.field}>
-                  <label style={styles.label}>旧密码 <span style={styles.required}>*</span></label>
-                  <div className={shakeField === 'oldPw' ? 'shake' : ''} style={getInputStyle('oldPw')}>
+                <div className="login-field" style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', color: 'rgba(232,245,251,.76)', fontSize: 13, fontWeight: 600, marginBottom: 7 }}>
+                    旧密码 <span style={{ color: '#fca5a5' }}>*</span>
+                  </label>
+                  <div className={`login-input-wrap${shakeField === 'oldPw' ? ' login-shake' : ''}`} style={inputWrapperStyle('oldPw')}>
                     <span style={styles.inputIcon}><LockIcon /></span>
-                    <input style={styles.input} type={showOld ? 'text' : 'password'} autoComplete="current-password"
-                      placeholder="请输入当前密码" value={oldPw}
-                      onChange={(e) => handleChange('oldPw', e.target.value)} onBlur={handleBlur('oldPw')} />
-                    <button type="button" style={styles.toggleBtn} onClick={() => setShowOld(!showOld)}
-                      aria-label={showOld ? '隐藏密码' : '显示密码'}>
-                      {showOld ? <EyeOnIcon /> : <EyeOffIcon />}
+                    <input
+                      className="login-input"
+                      style={styles.input}
+                      type={showOld ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      placeholder="请输入当前密码"
+                      value={oldPw}
+                      onFocus={() => setPasswordFocused(true)}
+                      onBlur={() => { setPasswordFocused(false); handleBlur('oldPw')() }}
+                      onChange={(e) => handleChange('oldPw', e.target.value)}
+                    />
+                    <button type="button" style={styles.toggle} onClick={() => setShowOld(!showOld)} aria-label={showOld ? '隐藏密码' : '显示密码'}>
+                      <EyeIcon open={showOld} />
                     </button>
                   </div>
-                  {errors.oldPw && <p style={styles.fieldError}>{errors.oldPw}</p>}
+                  {errors.oldPw && <p style={{ margin: '5px 0 0 4px', color: '#fca5a5', fontSize: 12 }}>{errors.oldPw}</p>}
                 </div>
               )}
 
-              {/* New Password */}
-              <div className="form-field" style={styles.field}>
-                <label style={styles.label}>新密码 <span style={styles.required}>*</span></label>
-                <div className={shakeField === 'newPw' ? 'shake' : ''} style={getInputStyle('newPw')}>
+              <div className="login-field" style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', color: 'rgba(232,245,251,.76)', fontSize: 13, fontWeight: 600, marginBottom: 7 }}>
+                  新密码 <span style={{ color: '#fca5a5' }}>*</span>
+                </label>
+                <div className={`login-input-wrap${shakeField === 'newPw' ? ' login-shake' : ''}`} style={inputWrapperStyle('newPw')}>
                   <span style={styles.inputIcon}><LockIcon /></span>
-                  <input style={styles.input} type={showNew ? 'text' : 'password'} autoComplete="new-password"
-                    placeholder="至少 6 位，不能与旧密码相同" value={newPw}
-                    onChange={(e) => handleChange('newPw', e.target.value)} onBlur={handleBlur('newPw')} />
-                  <button type="button" style={styles.toggleBtn} onClick={() => setShowNew(!showNew)}
-                    aria-label={showNew ? '隐藏密码' : '显示密码'}>
-                    {showNew ? <EyeOnIcon /> : <EyeOffIcon />}
+                  <input
+                    ref={newPwRef}
+                    className="login-input"
+                    style={styles.input}
+                    type={showNew ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    placeholder={isForce ? '至少 6 位' : '至少 6 位，不能与旧密码相同'}
+                    value={newPw}
+                    onFocus={() => setPasswordFocused(true)}
+                    onBlur={() => { setPasswordFocused(false); handleBlur('newPw')() }}
+                    onChange={(e) => handleChange('newPw', e.target.value)}
+                  />
+                  <button type="button" style={styles.toggle} onClick={() => setShowNew(!showNew)} aria-label={showNew ? '隐藏密码' : '显示密码'}>
+                    <EyeIcon open={showNew} />
                   </button>
                 </div>
-                {errors.newPw && <p style={styles.fieldError}>{errors.newPw}</p>}
+                {errors.newPw && <p style={{ margin: '5px 0 0 4px', color: '#fca5a5', fontSize: 12 }}>{errors.newPw}</p>}
               </div>
 
-              {/* Confirm Password */}
-              <div className="form-field" style={styles.field}>
-                <label style={styles.label}>确认新密码 <span style={styles.required}>*</span></label>
-                <div className={shakeField === 'confirmPw' ? 'shake' : ''} style={getInputStyle('confirmPw')}>
+              <div className="login-field" style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', color: 'rgba(232,245,251,.76)', fontSize: 13, fontWeight: 600, marginBottom: 7 }}>
+                  确认新密码 <span style={{ color: '#fca5a5' }}>*</span>
+                </label>
+                <div className={`login-input-wrap${shakeField === 'confirmPw' ? ' login-shake' : ''}`} style={inputWrapperStyle('confirmPw')}>
                   <span style={styles.inputIcon}><LockIcon /></span>
-                  <input style={styles.input} type={showConfirm ? 'text' : 'password'} autoComplete="new-password"
-                    placeholder="请再次输入新密码" value={confirmPw}
-                    onChange={(e) => handleChange('confirmPw', e.target.value)} onBlur={handleBlur('confirmPw')} />
-                  <button type="button" style={styles.toggleBtn} onClick={() => setShowConfirm(!showConfirm)}
-                    aria-label={showConfirm ? '隐藏密码' : '显示密码'}>
-                    {showConfirm ? <EyeOnIcon /> : <EyeOffIcon />}
+                  <input
+                    className="login-input"
+                    style={styles.input}
+                    type={showConfirm ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    placeholder="请再次输入新密码"
+                    value={confirmPw}
+                    onFocus={() => setPasswordFocused(true)}
+                    onBlur={() => { setPasswordFocused(false); handleBlur('confirmPw')() }}
+                    onChange={(e) => handleChange('confirmPw', e.target.value)}
+                  />
+                  <button type="button" style={styles.toggle} onClick={() => setShowConfirm(!showConfirm)} aria-label={showConfirm ? '隐藏密码' : '显示密码'}>
+                    <EyeIcon open={showConfirm} />
                   </button>
                 </div>
-                {errors.confirmPw && <p style={styles.fieldError}>{errors.confirmPw}</p>}
+                {errors.confirmPw && <p style={{ margin: '5px 0 0 4px', color: '#fca5a5', fontSize: 12 }}>{errors.confirmPw}</p>}
               </div>
 
-              {/* Submit */}
-              <div className="form-field" style={{ ...styles.field, paddingTop: 8 }}>
-                <button type="submit" disabled={loading || formSuccess}
+              <div className="login-field">
+                <button
+                  type="submit"
+                  disabled={loading || formSuccess}
                   style={{
-                    ...styles.submitBtn,
-                    ...(formSuccess ? { background: '#10b981' } : {}),
-                    opacity: loading ? 0.7 : 1,
+                    ...styles.submit,
+                    opacity: loading ? 0.72 : 1,
                     cursor: loading ? 'not-allowed' : 'pointer',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!loading && !formSuccess) {
-                      e.currentTarget.style.background = '#4F46E5'
-                      e.currentTarget.style.boxShadow = '0 4px 14px rgba(99,102,241,0.35)'
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!loading && !formSuccess) {
-                      e.currentTarget.style.background = '#6366F1'
-                      e.currentTarget.style.boxShadow = 'none'
-                    }
+                    background: formSuccess ? '#10b981' : styles.submit.background,
                   }}
                 >
-                  {loading ? <><span className="spinner" /><span>修改中...</span></>
-                    : formSuccess ? '修改成功 ✓'
-                    : '确认修改'}
+                  {loading ? <><span className="login-spinner" />{loadingText}</> : formSuccess ? '修改成功' : submitText}
                 </button>
               </div>
             </form>
 
-            <div className="form-field" style={{ ...styles.backLink, animationDelay: '0.28s' }}>
-              <a onClick={() => navigate('/login')}
-                style={{ color: '#4F46E5', fontWeight: 500, cursor: 'pointer', textDecoration: 'none' }}>
+            <p className="login-field" style={{ margin: '24px 0 0', textAlign: 'center', color: 'rgba(232,245,251,.46)', fontSize: 14 }}>
+              <a
+                onClick={() => navigate('/login')}
+                style={{ color: '#a8d6ee', fontWeight: 700, textDecoration: 'none', cursor: 'pointer' }}
+              >
                 返回登录
               </a>
-            </div>
-          </div>
+            </p>
+          </section>
         </div>
-      </div>
+      </main>
     </>
   )
 }

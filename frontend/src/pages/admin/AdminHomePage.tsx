@@ -4,7 +4,18 @@ import api from '../../services/api'
 import { refreshDashboard } from '../../services/refresh'
 import type { APIResponse } from '../../types/api'
 
-interface DashboardData { total_users: number; total_courses: number; total_docs: number; pending_docs: number; total_qa: number; today_qa: number }
+interface DashboardData {
+  total_users: number
+  total_courses: number
+  total_docs: number
+  pending_docs: number
+  total_qa: number
+  today_qa: number
+  user_role_dist?: { student: number; teacher: number; admin: number }
+  doc_status_dist?: { pending: number; approved: number; rejected: number }
+  rejected_qa?: number
+  feedback?: { total: number; useful: number; useless: number; error: number; with_comment: number }
+}
 
 const css = `
   @keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
@@ -75,9 +86,69 @@ export default function AdminHomePage() {
                 {typeof s.icon === 'function' ? s.icon(data?.pending_docs || 0) : s.icon}
                 {s.label}
               </div>
-              <div style={{ fontSize: 30, fontWeight: 800 }}>{data ? data[s.key as keyof DashboardData] : '—'}</div>
+              <div style={{ fontSize: 30, fontWeight: 800 }}>{(() => {
+                if (!data) return '—'
+                const v = data[s.key as keyof DashboardData]
+                return typeof v === 'number' ? v : '—'
+              })()}</div>
             </div>
           ))}
+        </div>
+
+        {/* 资料状态分布 + 反馈统计 */}
+        <div className="ad-anim" style={{ animationDelay: '0.18s', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+          {/* 资料状态分布 */}
+          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366F1' }} />
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>资料状态分布</span>
+            </div>
+            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {(['pending', 'approved', 'rejected'] as const).map((s) => {
+                const dist = data?.doc_status_dist || { pending: 0, approved: 0, rejected: 0 }
+                const total = (dist.pending + dist.approved + dist.rejected) || 1
+                const v = dist[s]
+                const pct = (v / total) * 100
+                const meta: Record<typeof s, { label: string; color: string; bg: string }> = {
+                  pending: { label: '待审核', color: '#F59E0B', bg: '#FFFBEB' },
+                  approved: { label: '已通过', color: '#10B981', bg: '#ECFDF5' },
+                  rejected: { label: '已驳回', color: '#EF4444', bg: '#FEF2F2' },
+                }
+                return (
+                  <div key={s}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#475569', marginBottom: 4 }}>
+                      <span><span style={{ background: meta[s].bg, color: meta[s].color, padding: '2px 6px', borderRadius: 4, fontWeight: 600, marginRight: 8 }}>{meta[s].label}</span>{v}</span>
+                      <span style={{ color: '#94a3b8' }}>{pct.toFixed(1)}%</span>
+                    </div>
+                    <div style={{ height: 6, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: meta[s].color, transition: 'width 0.5s ease' }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 反馈统计 */}
+          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#EC4899' }} />
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>反馈统计</span>
+              <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }}>
+                共 {data?.feedback?.total ?? 0} 条 · 含评论 {data?.feedback?.with_comment ?? 0}
+              </span>
+            </div>
+            <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              <FeedbackCell label="有用" value={data?.feedback?.useful ?? 0} color="#10B981" bg="#ECFDF5" />
+              <FeedbackCell label="无用" value={data?.feedback?.useless ?? 0} color="#F59E0B" bg="#FFFBEB" />
+              <FeedbackCell label="错误" value={data?.feedback?.error ?? 0} color="#EF4444" bg="#FEF2F2" />
+            </div>
+            <div style={{ padding: '0 20px 20px', fontSize: 12, color: '#64748b' }}>
+              拒答问答：<span style={{ fontWeight: 700, color: '#DC2626' }}>{data?.rejected_qa ?? 0}</span>
+              <span style={{ margin: '0 8px', color: '#cbd5e1' }}>·</span>
+              问答总量：<span style={{ fontWeight: 700, color: '#1e293b' }}>{data?.total_qa ?? 0}</span>
+            </div>
+          </div>
         </div>
 
         {/* Bottom Section */}
@@ -148,5 +219,14 @@ export default function AdminHomePage() {
         </div>
       </main>
     </>
+  )
+}
+
+function FeedbackCell({ label, value, color, bg }: { label: string; value: number; color: string; bg: string }) {
+  return (
+    <div style={{ background: bg, borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: 12, color, fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: 22, fontWeight: 800, color: '#0f172a' }}>{value}</span>
+    </div>
   )
 }

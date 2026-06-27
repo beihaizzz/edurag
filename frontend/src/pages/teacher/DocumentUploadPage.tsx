@@ -83,7 +83,26 @@ export default function DocumentUploadPage() {
         setSubmitting(false)
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '上传失败，请重试')
+      // 后端 409 (HTTPException) 的结构化 detail：
+      //   { detail: { message: string, existing_document: {...} } }
+      // 其它错误也尽量给出 detail 字符串
+      const e = err as { response?: { status?: number; data?: { detail?: unknown } }; message?: string }
+      const detail = e?.response?.data?.detail
+      let msg = '上传失败，请重试'
+      if (typeof detail === 'string') {
+        msg = detail
+      } else if (detail && typeof detail === 'object') {
+        const d = detail as { message?: string; existing_document?: { title?: string; uploader?: string } }
+        if (d.message && d.existing_document) {
+          const ex = d.existing_document
+          msg = `${d.message}：已存在文档「${ex.title}」（上传者：${ex.uploader ?? '—'}）`
+        } else if (d.message) {
+          msg = d.message
+        }
+      } else if (e?.message) {
+        msg = e.message
+      }
+      setError(msg)
       setSubmitting(false)
     }
   }

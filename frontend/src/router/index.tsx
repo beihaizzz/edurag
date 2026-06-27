@@ -21,6 +21,7 @@ import AdminHomePage from '../pages/admin/AdminHomePage'
 import ReviewList from '../pages/admin/ReviewList'
 import UserManage from '../pages/admin/UserManage'
 import AuditLogPage from '../pages/admin/AuditLogPage'
+import QAInsightsPage from '../pages/admin/QAInsightsPage'
 
 const router = createBrowserRouter([
   // ── 公开路由 ──
@@ -60,6 +61,7 @@ const router = createBrowserRouter([
               { path: '/teacher/documents/upload', element: <DocumentUploadPage /> },
               { path: '/teacher/documents', element: <DocumentListPage /> },
               { path: '/teacher/courses', element: <CourseManagePage /> },
+              { path: '/teacher/qa-insights', element: <QAInsightsPage /> },
             ],
           },
         ],
@@ -76,10 +78,12 @@ const router = createBrowserRouter([
               { path: '/admin/review', element: <ReviewList /> },
               { path: '/admin/users', element: <UserManage /> },
               { path: '/admin/audit-logs', element: <AuditLogPage /> },
+              { path: '/admin/qa-insights', element: <QAInsightsPage /> },
               // 管理端也能访问教师页面
               { path: '/teacher/documents/upload', element: <DocumentUploadPage /> },
               { path: '/teacher/documents', element: <DocumentListPage /> },
               { path: '/teacher/courses', element: <CourseManagePage /> },
+              { path: '/teacher/qa-insights', element: <QAInsightsPage /> },
             ],
           },
         ],
