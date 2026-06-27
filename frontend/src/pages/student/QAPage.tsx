@@ -620,18 +620,59 @@ export default function QAPage() {
             case 'retrieve': {
               const src = payload.source === 'web' ? '网络' : '课程'
               const hasResults = payload.has_results as boolean
-              const detail = hasResults ? `命中 ${src}资料` : `未命中 ${src}资料`
+              const count = payload.count as number | undefined
+              const detail = hasResults
+                ? `命中 ${src}资料${count ? ` ${count} 条` : ''}`
+                : `未命中 ${src}资料`
               advance('retrieve', detail)
               break
             }
 
-            case 'rerank':
-              advance('rerank')
+            case 'rerank': {
+              // Rerank 用 cross-encoder 做二次过滤，output_count=0 表示
+              // 之前 prefilter 的"命中"其实不相关 → 回填修正 retrieve 的状态
+              // 否则用户会看到"命中课程资料"+"基于 AI 知识"的矛盾
+              const outCount = payload.output_count as number | undefined
+              const inCount = payload.input_count as number | undefined
+              if (typeof outCount === 'number' && outCount === 0) {
+                updateMsg((prev) => {
+                  const steps = (prev.steps ?? makeInitialSteps()).map((s) =>
+                    s.key === 'retrieve'
+                      ? { ...s, detail: '未命中相关资料' }
+                      : s,
+                  )
+                  return { steps: advanceSteps(steps, 'rerank', '无相关结果') }
+                })
+              } else {
+                const detail = (typeof inCount === 'number' && typeof outCount === 'number')
+                  ? `保留 ${outCount}/${inCount} 条`
+                  : undefined
+                advance('rerank', detail)
+              }
               break
+            }
 
             case 'generate': {
               const len = payload.length as number | undefined
-              advance('generate', len ? `已生成 ${len} 字` : undefined)
+              const usedFallback = payload.used_fallback as boolean | undefined
+              let detail: string | undefined
+              if (usedFallback) {
+                // 后端 fallback：retrieve 阶段虽然有原始命中，但 rerank 已过滤为 0
+                // 或被判定为 stranded follow-up，最终用 AI 知识作答。前端需把
+                // retrieve 的 "命中课程资料" 改写成 "无相关资料"，避免与下方
+                // "基于 AI 知识" 矛盾。
+                updateMsg((prev) => ({
+                  steps: (prev.steps ?? makeInitialSteps()).map((s) =>
+                    s.key === 'retrieve' && (s.state === 'done' || s.state === 'running')
+                      ? { ...s, detail: '无相关资料' }
+                      : s,
+                  ),
+                }))
+                detail = '基于 AI 知识'
+              } else if (len) {
+                detail = `已生成 ${len} 字`
+              }
+              advance('generate', detail)
               break
             }
 

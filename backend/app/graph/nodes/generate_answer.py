@@ -224,6 +224,7 @@ async def generate_answer(state: RAGState) -> dict:
         return {
             "answer": answer,
             "sources": cited_sources,
+            "used_fallback": use_fallback,
         }
 
     except json.JSONDecodeError:
@@ -239,11 +240,11 @@ async def generate_answer(state: RAGState) -> dict:
         recovered = _extract_answer_from_broken_json(raw)
         if recovered:
             logger.info("Recovered answer from malformed JSON (%d chars)", len(recovered))
-            return {"answer": recovered, "sources": []}
+            return {"answer": recovered, "sources": [], "used_fallback": use_fallback}
         # Final fallback: strip leading/trailing JSON braces if present so the
         # user at least doesn't see raw JSON syntax
         cleaned = _strip_json_wrapping(raw)
-        return {"answer": cleaned, "sources": []}
+        return {"answer": cleaned, "sources": [], "used_fallback": use_fallback}
     except Exception:
         logger.exception("Answer generation failed")
-        return {"answer": "抱歉，答案生成过程中出现错误，请稍后重试。"}
+        return {"answer": "抱歉，答案生成过程中出现错误，请稍后重试。", "used_fallback": use_fallback}

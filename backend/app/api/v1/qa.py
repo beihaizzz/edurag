@@ -357,7 +357,9 @@ async def ask_question(
                             yield f"event: retrieve\ndata: {json.dumps({'source': 'web', 'has_results': has_web})}\n\n"
 
                         elif node_name == "generate_answer":
-                            yield f"event: generate\ndata: {json.dumps({})}\n\n"
+                            used_fallback = node_output.get("used_fallback", False)
+                            answer = node_output.get("answer", "") or ""
+                            yield f"event: generate\ndata: {json.dumps({'used_fallback': used_fallback, 'length': len(answer)})}\n\n"
 
                         elif node_name == "review_output":
                             result = node_output.get("review_result", "PASS")

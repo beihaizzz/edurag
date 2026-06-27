@@ -22,6 +22,7 @@ class RAGState(TypedDict, total=False):
     search_mode: str                   # "internal" | "web"
     has_web_results: bool
     answer: str
+    used_fallback: bool                # generate_answer used FALLBACK prompt (AI knowledge only) instead of grounded MAIN prompt
     review_result: str                 # "PASS" | "REJECT"
     matched_sources: list[dict]
     is_rejected: bool
