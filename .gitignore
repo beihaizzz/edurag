@@ -72,6 +72,9 @@ backend/.startup.*
 # Ad-hoc diagnostic / verification scripts (prefixed with underscore)
 backend/scripts/_*.py
 
+# Backup files
+*.bak
+
 # Course materials (binary files — use Git LFS or cloud storage)
 docs/**/*.pdf
 docs/**/*.ppt
